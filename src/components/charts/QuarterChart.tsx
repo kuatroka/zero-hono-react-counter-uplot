@@ -24,7 +24,18 @@ export function QuarterChart({ kind, title, labels, values }: QuarterChartProps)
       title
     );
 
+    const resizeObserver = new ResizeObserver(() => {
+      if (chartRef.current && containerRef.current) {
+        const width = containerRef.current.clientWidth;
+        const height = chartRef.current.height;
+        chartRef.current.setSize({ width, height });
+      }
+    });
+
+    resizeObserver.observe(containerRef.current);
+
     return () => {
+      resizeObserver.disconnect();
       if (chartRef.current) {
         chartRef.current.destroy();
         chartRef.current = null;
@@ -32,5 +43,5 @@ export function QuarterChart({ kind, title, labels, values }: QuarterChartProps)
     };
   }, [kind, labels, values, title]);
 
-  return <div ref={containerRef} />;
+  return <div ref={containerRef} className="chart-container" />;
 }
