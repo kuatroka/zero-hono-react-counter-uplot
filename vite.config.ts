@@ -1,7 +1,4 @@
-import { getRequestListener } from "@hono/node-server";
-import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
-import { app } from "./api/index.js";
 import dotenv from "dotenv";
 
 if (process.env.NODE_ENV === "development") {
@@ -11,6 +8,7 @@ if (process.env.NODE_ENV === "development") {
 export default defineConfig({
   server: {
     port: 3003,
+    proxy: { "/api": "http://localhost:4000" },
   },
   build: {
     target: "es2022",
@@ -21,19 +19,6 @@ export default defineConfig({
     },
   },
   plugins: [
-    react(),
-    {
-      name: "api-server",
-      configureServer(server) {
-        server.middlewares.use((req, res, next) => {
-          if (!req.url?.startsWith("/api")) {
-            return next();
-          }
-          getRequestListener(async (request) => {
-            return await app.fetch(request, {});
-          })(req, res);
-        });
-      },
-    },
+ 
   ],
 });

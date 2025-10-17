@@ -46,6 +46,20 @@ const medium = table("medium")
   })
   .primaryKey("id");
 
+const counter = table("counters")
+  .columns({
+    id: string(),
+    value: number(),
+  })
+  .primaryKey("id");
+
+const valueQuarter = table("value_quarters")
+  .columns({
+    quarter: string(),
+    value: number(),
+  })
+  .primaryKey("quarter");
+
 const messageRelationships = relationships(message, ({ one }) => ({
   sender: one({
     sourceField: ["senderID"],
@@ -60,7 +74,7 @@ const messageRelationships = relationships(message, ({ one }) => ({
 }));
 
 export const schema = createSchema({
-  tables: [user, medium, message],
+  tables: [user, medium, message, counter, valueQuarter],
   relationships: [messageRelationships],
 });
 
@@ -68,6 +82,8 @@ export type Schema = typeof schema;
 export type Message = Row<typeof schema.tables.message>;
 export type Medium = Row<typeof schema.tables.medium>;
 export type User = Row<typeof schema.tables.user>;
+export type Counter = Row<typeof schema.tables.counters>;
+export type ValueQuarter = Row<typeof schema.tables.value_quarters>;
 
 // The contents of your decoded JWT.
 type AuthData = {
@@ -98,17 +114,22 @@ export const permissions = definePermissions<AuthData, Schema>(schema, () => {
     },
     message: {
       row: {
-        // anyone can insert
         insert: ANYONE_CAN,
         update: {
-          // sender can only edit own messages
           preMutation: [allowIfMessageSender],
-          // sender can only edit messages to be owned by self
           postMutation: [allowIfMessageSender],
         },
-        // must be logged in to delete
         delete: [allowIfLoggedIn],
-        // everyone can read current messages
+        select: ANYONE_CAN,
+      },
+    },
+    counters: {
+      row: {
+        select: ANYONE_CAN,
+      },
+    },
+    value_quarters: {
+      row: {
         select: ANYONE_CAN,
       },
     },

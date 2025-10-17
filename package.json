@@ -17,11 +17,15 @@
   },
   "dependencies": {
     "@rocicorp/zero": "0.24.2025101500",
+    "@tanstack/react-router": "^1.133.10",
+    "@tanstack/router-devtools": "^1.133.10",
     "jose": "^5.9.6",
     "js-cookie": "^3.0.5",
+    "postgres": "^3.4.7",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
-    "sst": "3.9.33"
+    "sst": "3.9.33",
+    "uplot": "^1.6.32"
   },
   "devDependencies": {
     "@eslint/js": "^9.9.0",

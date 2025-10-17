@@ -1,13 +1,17 @@
 import { Hono } from "hono";
 import { setCookie } from "hono/cookie";
-import { handle } from "hono/vercel";
 import { SignJWT } from "jose";
+import counter from "./routes/counter";
+import quarters from "./routes/quarters";
 
 export const config = {
   runtime: "edge",
 };
 
 export const app = new Hono().basePath("/api");
+
+app.route("/counter", counter);
+app.route("/quarters", quarters);
 
 // See seed.sql
 // In real life you would of course authenticate the user however you like.
@@ -45,7 +49,6 @@ app.get("/login", async (c) => {
   return c.text("ok");
 });
 
-export default handle(app);
 
 function must<T>(val: T) {
   if (!val) {

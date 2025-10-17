@@ -86,3 +86,115 @@ td:last-child {
   align-items: center;
   margin-bottom: 1rem;
 }
+
+.nav-link {
+  display: inline-block;
+  padding: 0.6em 1.2em;
+  background-color: #1f2937;
+  color: white;
+  text-decoration: none;
+  border-radius: 8px;
+  transition: background-color 0.25s;
+}
+
+.nav-link:hover {
+  background-color: #374151;
+  color: white;
+}
+
+.counter-page {
+  padding: 16px;
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+.counter-header {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-bottom: 24px;
+}
+
+.back-link {
+  align-self: flex-start;
+  color: #2563eb;
+  text-decoration: none;
+}
+
+.back-link:hover {
+  text-decoration: underline;
+}
+
+.counter-controls {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  justify-content: center;
+  margin: 24px 0;
+}
+
+.counter-button {
+  width: 48px;
+  height: 48px;
+  font-size: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background-color: #1f2937;
+  color: white;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background-color 0.25s;
+}
+
+.counter-button:hover {
+  background-color: #374151;
+}
+
+.counter-value {
+  font-size: 32px;
+  font-weight: bold;
+  min-width: 100px;
+  text-align: center;
+}
+
+.primary-chart {
+  margin-bottom: 24px;
+}
+
+.charts-grid {
+  display: grid;
+  gap: 16px;
+  grid-template-columns: repeat(auto-fill, minmax(360px, 1fr));
+}
+
+.chart-card {
+  border: 1px solid #374151;
+  padding: 12px;
+  border-radius: 8px;
+  background-color: #111827;
+}
+
+.chart-card h3 {
+  margin: 0 0 4px 0;
+  font-size: 16px;
+  color: #f3f4f6;
+}
+
+.chart-card p {
+  margin: 0 0 12px 0;
+  font-size: 13px;
+  color: #9ca3af;
+}
+
+.loading,
+.error {
+  text-align: center;
+  padding: 48px;
+  font-size: 18px;
+}
+
+.error {
+  color: #ef4444;
+}
