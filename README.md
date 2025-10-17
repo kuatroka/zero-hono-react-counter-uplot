@@ -249,22 +249,24 @@ If your results meet the "Excellent" criteria, your Bun + Hono setup is performi
 
 ## Container Runtime
 
-This project automatically detects and uses either **Podman** or **Docker** for running the PostgreSQL database. The detection prioritizes Podman first, then falls back to Docker if Podman is not available.
+This project automatically detects and uses either **Podman** or **Docker** for running the PostgreSQL database. The detection verifies that the runtime is not only installed but also **functional** before selecting it.
 
 ### Prerequisites
 
-You must have either Podman or Docker installed:
+You must have either Podman or Docker installed and running:
 
 - **Podman** (recommended): [Install Podman](https://podman.io/getting-started/installation)
+  - On macOS: After installation, run `podman machine init` and `podman machine start`
 - **Docker**: [Install Docker](https://docs.docker.com/get-docker/)
+  - Ensure Docker Desktop is running before starting the database
 
 The database scripts (`bun run dev:db-up`, `bun run dev:db-down`, `bun run dev:clean`) will automatically detect which runtime is available and use it.
 
 ### Detection Priority
 
-1. **Podman** - Checked first
-2. **Docker** - Used if Podman is not found
-3. **Error** - If neither is installed, you'll see a clear error message
+1. **Podman** - Checked first (verifies `podman info` succeeds)
+2. **Docker** - Used if Podman is not functional (verifies `docker info` succeeds)
+3. **Error** - If neither is functional, you'll see a clear error message with setup instructions
 
 ### Docker Compose Compatibility
 
@@ -274,13 +276,17 @@ If using Docker, ensure you have Docker Compose installed:
 
 ## Troubleshooting
 
-### Container Runtime Not Found
+### Container Runtime Not Found or Not Functional
 
-If you see an error like "Neither podman nor docker is installed":
+If you see an error like "Neither podman nor docker is installed or functional":
 
-1. Install either Podman or Docker (see Container Runtime section above)
-2. Ensure the runtime is in your system PATH
-3. Verify installation by running `podman --version` or `docker --version`
+1. **Install** either Podman or Docker (see Container Runtime section above)
+2. **Start the runtime**:
+   - Podman (macOS): `podman machine start`
+   - Docker: Launch Docker Desktop
+3. **Verify** the runtime is working:
+   - Podman: `podman info`
+   - Docker: `docker info`
 
 ### Zero SQLite3 Native Module Issues
 
