@@ -1,30 +1,28 @@
 # Hello Zero
 
+This project uses **Bun** as both the JavaScript runtime and package manager, providing significantly better performance than Node.js. Bun is used to run the Hono API server and manage all dependencies.
+
 ## Option 1: Run this repo
 
 First, install dependencies:
 
 ```sh
-npm i
+bun install
 ```
 
-Next, run docker:
+Next, start the PostgreSQL database:
 
 ```sh
-npm run dev:db-up
+bun run dev:db-up
 ```
 
-**In a second terminal**, run the zero cache server:
+**In a second terminal**, start all application services (API + UI + Zero Cache):
 
 ```sh
-npm run dev:zero-cache
+bun run dev
 ```
 
-**In a third terminal**, run the Vite dev server:
-
-```sh
-npm run dev:ui
-```
+This will start the Hono API server (Bun), Vite dev server (React UI), and Zero cache server concurrently with color-coded output.
 
 ## Option 2: Install Zero in your own project
 
@@ -44,7 +42,7 @@ database.
 
 ```ini
 # Your application's data
-ZERO_UPSTREAM_DB="postgresql://user:password@127.0.0.1/mydb"
+ZERO_UPSTREAM_DB="postgresql://user:password@127.0.0.1/postgres"
 
 # Secret to decode auth token.
 ZERO_AUTH_SECRET="secretkey"
@@ -61,7 +59,7 @@ VITE_PUBLIC_SERVER=http://localhost:4848
 1. **Install Zero**
 
 ```bash
-npm install @rocicorp/zero
+bun add @rocicorp/zero
 ```
 
 2. **Create Schema** Define your database schema using Zero's schema builder.
@@ -145,25 +143,155 @@ For more examples of queries, mutations, and relationships, explore the
 This example includes JWT-based authentication. See [api/index.ts](api/index.ts)
 for an example implementation using Hono.
 
-### Development
+## Development
 
-**1. Start the PostgreSQL database:**
+This project uses `concurrently` to run multiple development servers simultaneously, reducing the number of terminal windows you need to manage.
 
-If you are using Docker (referencing the example in
-[docker](docker/docker-compose.yml)), run:
+### Recommended Workflow (Two Terminals)
 
-```bash
-npm run dev:db-up
-```
-
-**2. Start the zero cache server (in a separate terminal):**
+**Terminal 1: Start the PostgreSQL database**
 
 ```bash
-npx zero-cache
+bun run dev:db-up
 ```
 
-**3. Start your React dev server**
+**Terminal 2: Start all application services (API + UI + Zero Cache)**
 
 ```bash
-npm run dev # this depends on your react app setup
+bun run dev
 ```
+
+This single command runs three services concurrently with color-coded output:
+- **API Server** (cyan) - Hono API on Bun runtime
+- **UI Server** (magenta) - Vite dev server for React
+- **Zero Cache** (yellow) - Zero sync cache server
+
+### Alternative: Individual Commands (For Debugging)
+
+If you need to run services separately for debugging purposes:
+
+```bash
+# Terminal 1: Database
+bun run dev:db-up
+
+# Terminal 2: API Server
+bun run dev:api
+
+# Terminal 3: UI Server
+bun run dev:ui
+
+# Terminal 4: Zero Cache
+bun run dev:zero-cache
+```
+
+### Experimental: One Terminal
+
+If your database can run in the background, you can start everything with:
+
+```bash
+bun run dev:all
+```
+
+This starts the database, waits 3 seconds for it to initialize, then starts all application services.
+
+### Stopping Services
+
+- Press `Ctrl+C` in the terminal running `bun run dev` to stop all application services
+- Press `Ctrl+C` in the database terminal, or run `bun run dev:db-down` to stop the database
+
+### Cleaning Up
+
+To remove all database volumes and Zero replica files:
+
+```bash
+bun run dev:clean
+```
+
+## Performance Benchmarking
+
+This project uses Bun as the runtime for the Hono API server, which provides significant performance improvements over Node.js.
+
+### Running Benchmarks
+
+To benchmark the API server performance, use `autocannon`:
+
+**1. Start the API server:**
+
+```bash
+bun run dev:api
+```
+
+**2. In a separate terminal, run the benchmark:**
+
+```bash
+bunx autocannon -c 100 -d 30 http://localhost:4000/api/counter
+```
+
+This command runs a 30-second load test with 100 concurrent connections.
+
+### Interpreting Results
+
+Look for these key metrics in the output:
+
+- **Requests/sec**: 
+  - ✅ **20,000+ req/sec** - Excellent (Bun is working great)
+  - ⚠️ **< 10,000 req/sec** - May indicate performance issues
+
+- **Latency avg**: 
+  - ✅ **< 10ms** - Great performance
+  - ⚠️ **> 50ms** - May need optimization
+
+- **Latency p99**: 
+  - ✅ **< 50ms** - Consistent performance
+  - ⚠️ **> 200ms** - High tail latency, investigate bottlenecks
+
+If your results meet the "Excellent" criteria, your Bun + Hono setup is performing optimally!
+
+## Container Runtime
+
+This project automatically detects and uses either **Podman** or **Docker** for running the PostgreSQL database. The detection prioritizes Podman first, then falls back to Docker if Podman is not available.
+
+### Prerequisites
+
+You must have either Podman or Docker installed:
+
+- **Podman** (recommended): [Install Podman](https://podman.io/getting-started/installation)
+- **Docker**: [Install Docker](https://docs.docker.com/get-docker/)
+
+The database scripts (`bun run dev:db-up`, `bun run dev:db-down`, `bun run dev:clean`) will automatically detect which runtime is available and use it.
+
+### Detection Priority
+
+1. **Podman** - Checked first
+2. **Docker** - Used if Podman is not found
+3. **Error** - If neither is installed, you'll see a clear error message
+
+### Docker Compose Compatibility
+
+If using Docker, ensure you have Docker Compose installed:
+- Docker Desktop includes Compose by default
+- For standalone Docker Engine, install the Compose plugin: [Install Docker Compose](https://docs.docker.com/compose/install/)
+
+## Troubleshooting
+
+### Container Runtime Not Found
+
+If you see an error like "Neither podman nor docker is installed":
+
+1. Install either Podman or Docker (see Container Runtime section above)
+2. Ensure the runtime is in your system PATH
+3. Verify installation by running `podman --version` or `docker --version`
+
+### Zero SQLite3 Native Module Issues
+
+If you encounter errors related to the `@rocicorp/zero-sqlite3` native module (such as module loading errors or crashes), you may need to rebuild it from source for your specific platform:
+
+```bash
+npm rebuild @rocicorp/zero-sqlite3 --build-from-source
+```
+
+This is particularly important when:
+- Switching between different operating systems or architectures
+- Upgrading Bun versions
+- After cloning the repository on a new machine
+- Experiencing crashes or "module not found" errors related to SQLite
