@@ -9,6 +9,9 @@ if (process.env.NODE_ENV === "development") {
 }
 
 export default defineConfig({
+  server: {
+    port: 3003,
+  },
   build: {
     target: "es2022",
   },
