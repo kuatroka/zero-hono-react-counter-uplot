@@ -31,7 +31,7 @@ export function GlobalSearch() {
   const z = getZero();
   const trimmedQuery = query.trim();
   
-  const searchQuery = trimmedQuery.length >= 2
+  const searchQuery = trimmedQuery
     ? z.query.entities
         .where('name', 'ILIKE', `%${trimmedQuery}%`)
         .limit(5)
@@ -69,7 +69,7 @@ export function GlobalSearch() {
         className="w-64 px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white text-gray-900"
       />
       
-      {isOpen && debouncedQuery.length >= 2 && results && results.length > 0 && (
+      {isOpen && trimmedQuery && results && results.length > 0 && (
         <div className="absolute top-full mt-2 w-full bg-white border border-gray-200 rounded-lg shadow-lg z-50 max-h-80 overflow-y-auto">
           {results.map((entity) => (
             <button
@@ -90,7 +90,7 @@ export function GlobalSearch() {
         </div>
       )}
       
-      {isOpen && debouncedQuery.length >= 2 && results && results.length === 0 && (
+      {isOpen && trimmedQuery && results && results.length === 0 && (
         <div className="absolute top-full mt-2 w-full bg-white border border-gray-200 rounded-lg shadow-lg z-50 px-4 py-3 text-gray-500 text-sm">
           No results found
         </div>
