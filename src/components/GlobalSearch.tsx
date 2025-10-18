@@ -29,13 +29,17 @@ export function GlobalSearch() {
   }, []);
 
   const z = getZero();
-  const searchQuery = debouncedQuery.length >= 2
+  const trimmedQuery = query.trim();
+  
+  const searchQuery = trimmedQuery.length >= 2
     ? z.query.entities
-        .where('name', 'ILIKE', `%${debouncedQuery}%`)
+        .where('name', 'ILIKE', `%${trimmedQuery}%`)
         .limit(5)
     : z.query.entities.limit(0);
   
-  const [results] = useQuery(searchQuery);
+  const queryOpts = query !== debouncedQuery ? undefined : ({ ttl: 'none' } as const);
+  
+  const [results] = useQuery(searchQuery, queryOpts);
 
   const handleSelect = (entityId: string) => {
     navigate(`/entities/${entityId}`);
