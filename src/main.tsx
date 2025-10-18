@@ -17,6 +17,11 @@ import { Schema } from "./schema";
 import { randomMessage } from "./test-data";
 import { CounterPage } from "./components/CounterPage";
 import { ThemeSwitcher } from "./components/ThemeSwitcher";
+import { GlobalNav } from "./components/GlobalNav";
+import { EntitiesList } from "./pages/EntitiesList";
+import { EntityDetail } from "./pages/EntityDetail";
+import { UserProfile } from "./pages/UserProfile";
+import { initZero } from "./zero-client";
 
 const encodedJWT = Cookies.get("jwt");
 const decodedJWT = encodedJWT && decodeJwt(encodedJWT);
@@ -26,6 +31,8 @@ const auth = encodedJWT;
 
 function HomePage() {
   const z = useZero<Schema>();
+  initZero(z);
+  
   const [users] = useQuery(z.query.user);
   const [mediums] = useQuery(z.query.medium);
 
@@ -244,9 +251,15 @@ createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <ZeroProvider {...{ userID, auth, server, schema }}>
       <BrowserRouter>
+        <GlobalNav />
         <Routes>
           <Route path="/" element={<HomePage />} />
           <Route path="/counter" element={<CounterPage />} />
+          <Route path="/entities" element={<EntitiesList />} />
+          <Route path="/investors" element={<EntitiesList initialCategory="investor" />} />
+          <Route path="/assets" element={<EntitiesList initialCategory="asset" />} />
+          <Route path="/entities/:id" element={<EntityDetail />} />
+          <Route path="/profile" element={<UserProfile />} />
         </Routes>
       </BrowserRouter>
     </ZeroProvider>

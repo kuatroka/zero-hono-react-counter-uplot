@@ -60,6 +60,17 @@ const valueQuarter = table("value_quarters")
   })
   .primaryKey("quarter");
 
+const entity = table("entities")
+  .columns({
+    id: string(),
+    name: string(),
+    category: string(),
+    description: string(),
+    value: number(),
+    created_at: string().from("created_at"),
+  })
+  .primaryKey("id");
+
 const messageRelationships = relationships(message, ({ one }) => ({
   sender: one({
     sourceField: ["senderID"],
@@ -74,7 +85,7 @@ const messageRelationships = relationships(message, ({ one }) => ({
 }));
 
 export const schema = createSchema({
-  tables: [user, medium, message, counter, valueQuarter],
+  tables: [user, medium, message, counter, valueQuarter, entity],
   relationships: [messageRelationships],
 });
 
@@ -84,6 +95,7 @@ export type Medium = Row<typeof schema.tables.medium>;
 export type User = Row<typeof schema.tables.user>;
 export type Counter = Row<typeof schema.tables.counters>;
 export type ValueQuarter = Row<typeof schema.tables.value_quarters>;
+export type Entity = Row<typeof schema.tables.entities>;
 
 // The contents of your decoded JWT.
 type AuthData = {
@@ -129,6 +141,11 @@ export const permissions = definePermissions<AuthData, Schema>(schema, () => {
       },
     },
     value_quarters: {
+      row: {
+        select: ANYONE_CAN,
+      },
+    },
+    entities: {
       row: {
         select: ANYONE_CAN,
       },
