@@ -6,14 +6,7 @@ import { ZeroProvider } from "@rocicorp/zero/react";
 import { schema } from "./schema.ts";
 import Cookies from "js-cookie";
 import { decodeJwt } from "jose";
-import {
-  createRouter,
-  createRoute,
-  createRootRoute,
-  RouterProvider,
-  Outlet,
-} from "@tanstack/react-router";
-import { TanStackRouterDevtools } from "@tanstack/router-devtools";
+import { BrowserRouter, Routes, Route, Link } from "react-router-dom";
 import { escapeLike } from "@rocicorp/zero";
 import { useQuery, useZero } from "@rocicorp/zero/react";
 import { useState } from "react";
@@ -31,16 +24,7 @@ const userID = decodedJWT?.sub ? (decodedJWT.sub as string) : "anon";
 const server = import.meta.env.VITE_PUBLIC_SERVER;
 const auth = encodedJWT;
 
-const rootRoute = createRootRoute({
-  component: () => (
-    <>
-      <Outlet />
-      <TanStackRouterDevtools />
-    </>
-  ),
-});
-
-function IndexComponent() {
+function HomePage() {
   const z = useZero<Schema>();
   const [users] = useQuery(z.query.user);
   const [mediums] = useQuery(z.query.medium);
@@ -143,9 +127,9 @@ function IndexComponent() {
           </div>
 
           <div className="flex justify-center">
-            <a href="/counter" className="btn btn-primary">
+            <Link to="/counter" className="btn btn-primary">
               View Counter & Charts →
-            </a>
+            </Link>
           </div>
 
           <div className="card bg-base-100 shadow-lg">
@@ -256,32 +240,15 @@ function IndexComponent() {
   );
 }
 
-const indexRoute = createRoute({
-  getParentRoute: () => rootRoute,
-  path: "/",
-  component: IndexComponent,
-});
-
-const counterRoute = createRoute({
-  getParentRoute: () => rootRoute,
-  path: "/counter",
-  component: CounterPage,
-});
-
-const routeTree = rootRoute.addChildren([indexRoute, counterRoute]);
-
-const router = createRouter({ routeTree });
-
-declare module "@tanstack/react-router" {
-  interface Register {
-    router: typeof router;
-  }
-}
-
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <ZeroProvider {...{ userID, auth, server, schema }}>
-      <RouterProvider router={router} />
+      <BrowserRouter>
+        <Routes>
+          <Route path="/" element={<HomePage />} />
+          <Route path="/counter" element={<CounterPage />} />
+        </Routes>
+      </BrowserRouter>
     </ZeroProvider>
   </StrictMode>
 );
