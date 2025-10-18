@@ -1,5 +1,9 @@
 # Quarterly Counter Charts - Change Proposal
 
+> **⚠️ STATUS: PARTIALLY IMPLEMENTED & SUPERSEDED**  
+> This proposal was partially implemented. The counter and charts features exist, but the routing evolved to use React Router instead of TanStack Router.  
+> **See:** [mvp-full-implementation](../mvp-full-implementation/) for the actual implementation.
+
 ## Quick Reference
 
 This change proposal adds a counter feature with quarterly data visualization using uPlot charts, demonstrating Zero + React + TanStack Router integration.

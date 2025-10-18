@@ -1,4 +1,17 @@
-# Hello Zero
+# Zero Hono React Counter uPlot
+
+A real-time analytics application demonstrating **Zero-sync** (Rocicorp's sync framework) with React, Bun, Hono, and PostgreSQL.
+
+## Features
+
+- **🔍 Global Search:** Instant client-side search across 1000 investors and assets using Zero-sync
+- **📊 Counter & Charts:** Interactive counter with 10 different uPlot chart visualizations
+- **⚡ Real-time Sync:** Zero-sync keeps data synchronized across multiple browser tabs
+- **🎯 Modern Stack:** React 19 + Bun + Hono + PostgreSQL + React Router
+
+**📖 For detailed architecture and implementation history, see [CURRENT-STATE.md](./CURRENT-STATE.md)**
+
+## Tech Stack
 
 This project uses **Bun** as both the JavaScript runtime and package manager, providing significantly better performance than Node.js. Bun is used to run the Hono API server and manage all dependencies.
 

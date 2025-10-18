@@ -1,7 +1,11 @@
 # Project Context
 
 ## Purpose
-A real-time messaging application demonstrating Zero (Rocicorp's sync framework) capabilities. The app showcases real-time data synchronization between multiple clients using PostgreSQL and Zero Cache, with features including message CRUD operations, filtering, relationships, and JWT-based authentication with row-level permissions.
+A real-time analytics application demonstrating Zero (Rocicorp's sync framework) capabilities. The app showcases:
+- **Entities Management:** Global search across 1000 investors and assets with instant Zero-sync queries
+- **Counter & Charts:** Interactive counter with 10 different uPlot chart visualizations
+- **Real-time Sync:** Data synchronization between multiple clients using PostgreSQL and Zero Cache
+- **Messages Demo:** Original Zero example with CRUD operations, filtering, relationships, and JWT-based authentication
 
 ## Tech Stack
 
@@ -9,7 +13,10 @@ A real-time messaging application demonstrating Zero (Rocicorp's sync framework)
 - React 19.2.0
 - TypeScript 5.5.3
 - Vite 5.4.1 (dev server on port 3003)
+- React Router 7.9.4 (client-side routing)
 - @rocicorp/zero 0.24 (real-time sync)
+- uPlot 1.6.32 (charting library)
+- DaisyUI 5.3.7 + Tailwind 4.1.14 (styling)
 - js-cookie (client-side cookie management)
 
 ### Backend
@@ -81,8 +88,25 @@ Zero is a real-time sync framework that maintains a local SQLite replica on the 
 - **Queries**: Reactive queries with .where(), .orderBy(), .related() methods
 - **Mutations**: z.mutate.table.insert/update/delete operations
 - **Zero Cache**: Server component that manages sync between clients and PostgreSQL
+- **Preloading**: z.preload() to cache frequently accessed data for instant queries
 
 ### Application Domain
+
+#### Entities System (Primary Feature)
+- **Entities**: Unified table for investors and assets (1000 records total)
+  - Fields: id, name, category ('investor' | 'asset'), description, value, created_at
+  - Indexed on category and name for performance
+  - Preloaded: 500 most recent entities for instant search
+- **Global Search**: Zero-sync ILIKE queries for case-insensitive substring matching
+- **List Pages**: Paginated views with category filtering
+- **Detail Pages**: Individual entity information pages
+
+#### Counter & Charts (Demo Feature)
+- **Counter**: Simple increment/decrement with PostgreSQL persistence
+- **Quarterly Data**: 107 quarters (1999Q1-2025Q4) for chart visualizations
+- **10 Chart Types**: Bars, line, area, scatter, step, spline, cumulative, moving average, band, dual-axis
+
+#### Messages System (Original Zero Demo)
 - **Messages**: Core entity with body, labels (JSON array), timestamp, sender, and medium
 - **Users**: Can be partners or regular users, authenticated via JWT
 - **Mediums**: Communication channels for messages
