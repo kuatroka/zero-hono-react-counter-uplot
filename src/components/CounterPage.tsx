@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import * as counterService from "../services/counter";
 import * as quartersService from "../services/quarters";
 import { QuarterChart } from "./charts/QuarterChart";
@@ -70,7 +71,7 @@ export function CounterPage() {
           </svg>
           <span>Error: {error}</span>
         </div>
-        <a href="/" className="btn btn-primary">Back to Home</a>
+        <Link to="/" className="btn btn-primary">Back to Home</Link>
       </div>
     );
   }
@@ -83,9 +84,9 @@ export function CounterPage() {
         <div className="flex flex-col gap-6">
           <header className="flex justify-between items-start">
             <div className="space-y-3">
-              <a href="/" className="link link-primary flex items-center gap-2 w-max">
+              <Link to="/" className="link link-primary flex items-center gap-2 w-max">
                 <span className="text-xl">←</span> Back to Home
-              </a>
+              </Link>
               <h1 className="text-3xl font-bold">Counter & Quarterly Charts</h1>
             </div>
             <ThemeSwitcher />
