@@ -66,6 +66,65 @@ A real-time analytics application demonstrating Zero (Rocicorp's sync framework)
 - **Relationships**: First-class relationships defined in Zero schema (one-to-many, many-to-many)
 - **Permissions**: Declarative row-level permissions using Zero's permission system
 
+### Zero-Sync Data Access Patterns (CRITICAL)
+
+**This is a local-first application.** All data queries MUST use Zero's query builder, NOT custom REST API endpoints.
+
+#### ✅ CORRECT: Use Zero Queries
+```typescript
+// Reading data
+const [entities] = useQuery(z.query.entities.where('name', 'ILIKE', `%${search}%`).limit(10));
+
+// Search functionality
+const [results] = useQuery(z.query.entities.where('name', 'ILIKE', `%${query}%`).limit(5));
+
+// Preloading for instant queries
+z.preload(z.query.entities.orderBy('created_at', 'desc').limit(500));
+```
+
+**Benefits:**
+- Data synced to local IndexedDB automatically
+- Queries execute instantly against local cache
+- Zero handles server sync in background
+- No network latency for cached data
+- Reactive updates when data changes
+
+#### ❌ WRONG: Custom REST API Endpoints
+```typescript
+// ❌ DO NOT create custom data query endpoints
+app.get("/api/search", async (c) => { /* ... */ });
+app.get("/api/entities", async (c) => { /* ... */ });
+
+// ❌ DO NOT fetch data via REST
+const data = await fetch('/api/entities').then(r => r.json());
+```
+
+**Why this is wrong:**
+- Bypasses Zero-sync entirely
+- Requires network round-trip every time
+- No local caching or reactive updates
+- Defeats local-first architecture
+
+#### When to Use Hono API Endpoints
+Use Hono API endpoints ONLY for:
+- **Authentication/Authorization** (JWT generation, login/logout)
+- **External integrations** (third-party API calls, webhooks)
+- **File uploads/downloads** (binary data handling)
+- **Server-side computations** (heavy processing, report generation)
+
+#### Decision Rule
+```
+Need to access data?
+├─ Database data that syncs? → Use Zero query
+├─ Search/filter/sort? → Use Zero query
+├─ Authentication? → Use API endpoint
+├─ External service? → Use API endpoint
+├─ File upload/download? → Use API endpoint
+└─ Heavy server computation? → Use API endpoint
+```
+
+**Reference:** See `src/components/GlobalSearch.tsx` for correct Zero-based search implementation.
+
 ### Testing Strategy
 - Autocannon available for load testing
 - Manual testing via UI interactions

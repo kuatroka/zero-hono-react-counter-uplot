@@ -402,6 +402,205 @@ Only add complexity with:
 - Prefer verb-led prefixes: `add-`, `update-`, `remove-`, `refactor-`
 - Ensure uniqueness; if taken, append `-2`, `-3`, etc.
 
+## Zero-Sync Architecture Patterns (CRITICAL)
+
+**This is a local-first application using Zero-sync.** Data queries MUST use Zero's query builder, NOT custom REST API endpoints.
+
+### ✅ CORRECT: Use Zero Queries for Data Access
+
+**Reading data:**
+```typescript
+// ✅ CORRECT - Use Zero query builder
+const z = useZero<Schema>();
+const [entities] = useQuery(
+  z.query.entities
+    .where('name', 'ILIKE', `%${search}%`)
+    .limit(10)
+);
+```
+
+**Why this is correct:**
+- Data synced to local IndexedDB automatically
+- Queries execute instantly against local cache
+- Zero handles server sync in background
+- No network latency for cached data
+- Reactive updates when data changes
+
+**Search functionality:**
+```typescript
+// ✅ CORRECT - Client-side search with Zero
+const [results] = useQuery(
+  z.query.entities
+    .where('name', 'ILIKE', `%${searchQuery}%`)
+    .limit(5)
+);
+```
+
+**Preloading for instant search:**
+```typescript
+// ✅ CORRECT - Preload frequently accessed data
+z.preload(
+  z.query.entities
+    .orderBy('created_at', 'desc')
+    .limit(500)
+);
+```
+
+### ❌ WRONG: Custom REST API Endpoints
+
+**DO NOT create custom API endpoints for data queries:**
+```typescript
+// ❌ WRONG - Custom search API endpoint
+app.get("/api/search", async (c) => {
+  const results = await db.query("SELECT * FROM entities WHERE name ILIKE $1", [query]);
+  return c.json(results);
+});
+
+// ❌ WRONG - Fetching from custom API
+const results = await fetch(`/api/search?q=${query}`).then(r => r.json());
+```
+
+**Why this is wrong:**
+- Bypasses Zero-sync entirely
+- Requires network round-trip every time
+- No local caching
+- No reactive updates
+- Defeats the purpose of local-first architecture
+- Data won't sync to other clients properly
+
+### When to Use Hono API Endpoints
+
+**✅ Use Hono API endpoints ONLY for:**
+
+1. **Authentication/Authorization:**
+```typescript
+// ✅ CORRECT - Auth is server-side concern
+app.post("/api/auth/login", async (c) => {
+  const token = await generateJWT(user);
+  return c.json({ token });
+});
+```
+
+2. **External integrations:**
+```typescript
+// ✅ CORRECT - Third-party API calls
+app.post("/api/stripe/webhook", async (c) => {
+  await handleStripeWebhook(c.req);
+  return c.json({ received: true });
+});
+```
+
+3. **File uploads/downloads:**
+```typescript
+// ✅ CORRECT - Binary data handling
+app.post("/api/upload", async (c) => {
+  const file = await c.req.formData();
+  const url = await uploadToS3(file);
+  return c.json({ url });
+});
+```
+
+4. **Server-side computations:**
+```typescript
+// ✅ CORRECT - Heavy processing that can't run client-side
+app.post("/api/reports/generate", async (c) => {
+  const pdf = await generateLargeReport();
+  return c.body(pdf, 200, { 'Content-Type': 'application/pdf' });
+});
+```
+
+### Common Mistakes to Avoid
+
+**❌ Mistake 1: Creating /api/search endpoint**
+```typescript
+// ❌ WRONG
+app.get("/api/search", async (c) => { /* ... */ });
+```
+**✅ Solution:** Use Zero queries with ILIKE
+
+**❌ Mistake 2: Creating /api/entities endpoint**
+```typescript
+// ❌ WRONG
+app.get("/api/entities", async (c) => { /* ... */ });
+```
+**✅ Solution:** Use Zero queries with .where() and .limit()
+
+**❌ Mistake 3: Adding PostgreSQL full-text search**
+```sql
+-- ❌ WRONG - Zero doesn't use these
+CREATE EXTENSION pg_trgm;
+CREATE INDEX idx_entities_search_trgm ON entities USING GIN (...);
+```
+**✅ Solution:** Use simple B-tree indexes, Zero handles queries
+
+**❌ Mistake 4: Using fetch() for data queries**
+```typescript
+// ❌ WRONG
+const data = await fetch('/api/entities').then(r => r.json());
+```
+**✅ Solution:** Use useQuery(z.query.entities)
+
+### Zero Query Patterns
+
+**Filtering:**
+```typescript
+// Case-insensitive search
+z.query.entities.where('name', 'ILIKE', `%${search}%`)
+
+// Exact match
+z.query.entities.where('category', '=', 'investor')
+
+// Multiple conditions
+z.query.entities
+  .where('category', '=', 'investor')
+  .where('value', '>', 1000000)
+```
+
+**Sorting and limiting:**
+```typescript
+z.query.entities
+  .orderBy('created_at', 'desc')
+  .limit(50)
+  .offset(page * 50)
+```
+
+**Relationships:**
+```typescript
+z.query.messages
+  .related('sender')
+  .where('sender.isPartner', '=', true)
+```
+
+**Preloading:**
+```typescript
+// Preload on app startup for instant queries
+z.preload(
+  z.query.entities
+    .orderBy('created_at', 'desc')
+    .limit(500)
+);
+```
+
+### Decision Tree: Zero Query vs API Endpoint
+
+```
+Need to access data?
+├─ Is it database data that syncs? → Use Zero query
+├─ Is it search/filter/sort? → Use Zero query
+├─ Is it authentication? → Use API endpoint
+├─ Is it external service? → Use API endpoint
+├─ Is it file upload/download? → Use API endpoint
+└─ Is it heavy server computation? → Use API endpoint
+```
+
+### Reference Implementation
+
+See `src/components/GlobalSearch.tsx` for correct Zero-based search implementation:
+- Uses `z.query.entities.where('name', 'ILIKE', ...)`
+- No custom API endpoint
+- Instant client-side queries
+- Preloaded data for best performance
+
 ## Tool Selection Guide
 
 | Task | Tool | Why |
