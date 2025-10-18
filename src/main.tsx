@@ -29,9 +29,28 @@ const userID = decodedJWT?.sub ? (decodedJWT.sub as string) : "anon";
 const server = import.meta.env.VITE_PUBLIC_SERVER;
 const auth = encodedJWT;
 
-function HomePage() {
+function AppContent() {
   const z = useZero<Schema>();
   initZero(z);
+  
+  return (
+    <BrowserRouter>
+      <GlobalNav />
+      <Routes>
+        <Route path="/" element={<HomePage />} />
+        <Route path="/counter" element={<CounterPage />} />
+        <Route path="/entities" element={<EntitiesList />} />
+        <Route path="/investors" element={<EntitiesList initialCategory="investor" />} />
+        <Route path="/assets" element={<EntitiesList initialCategory="asset" />} />
+        <Route path="/entities/:id" element={<EntityDetail />} />
+        <Route path="/profile" element={<UserProfile />} />
+      </Routes>
+    </BrowserRouter>
+  );
+}
+
+function HomePage() {
+  const z = useZero<Schema>();
   
   const [users] = useQuery(z.query.user);
   const [mediums] = useQuery(z.query.medium);
@@ -250,18 +269,7 @@ function HomePage() {
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <ZeroProvider {...{ userID, auth, server, schema }}>
-      <BrowserRouter>
-        <GlobalNav />
-        <Routes>
-          <Route path="/" element={<HomePage />} />
-          <Route path="/counter" element={<CounterPage />} />
-          <Route path="/entities" element={<EntitiesList />} />
-          <Route path="/investors" element={<EntitiesList initialCategory="investor" />} />
-          <Route path="/assets" element={<EntitiesList initialCategory="asset" />} />
-          <Route path="/entities/:id" element={<EntityDetail />} />
-          <Route path="/profile" element={<UserProfile />} />
-        </Routes>
-      </BrowserRouter>
+      <AppContent />
     </ZeroProvider>
   </StrictMode>
 );
