@@ -67,7 +67,7 @@ const entity = table("entities")
     category: string(),
     description: string(),
     value: number(),
-    created_at: string().from("created_at"),
+    created_at: number().from("created_at"),
   })
   .primaryKey("id");
 
