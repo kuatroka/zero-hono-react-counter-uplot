@@ -9,7 +9,9 @@ A real-time analytics application demonstrating **Zero-sync** (Rocicorp's sync f
 - **⚡ Real-time Sync:** Zero-sync keeps data synchronized across multiple browser tabs
 - **🎯 Modern Stack:** React 19 + Bun + Hono + PostgreSQL + React Router
 
-**📖 For detailed architecture and implementation history, see [CURRENT-STATE.md](./CURRENT-STATE.md)**
+**📖 Documentation:**
+- [CURRENT-STATE.md](./CURRENT-STATE.md) - Architecture and implementation history
+- [ZERO-SYNC-PATTERNS.md](./ZERO-SYNC-PATTERNS.md) - **Zero-sync data access patterns (MUST READ)**
 
 ## Tech Stack
 
