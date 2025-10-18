@@ -28,11 +28,19 @@ export function GlobalSearch() {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  const [results] = useQuery(
-    zero.query.entities
-      .where('name', 'LIKE', `%${debouncedQuery}%`)
-      .limit(5)
+  const [allResults] = useQuery(
+    debouncedQuery.length >= 2
+      ? zero.query.entities.limit(100)
+      : zero.query.entities.limit(0)
   );
+
+  const results = allResults
+    ? allResults
+        .filter((entity) =>
+          entity.name.toLowerCase().includes(debouncedQuery.toLowerCase())
+        )
+        .slice(0, 5)
+    : [];
 
   const handleSelect = (entityId: string) => {
     navigate(`/entities/${entityId}`);
@@ -62,7 +70,7 @@ export function GlobalSearch() {
         className="w-64 px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white text-gray-900"
       />
       
-      {isOpen && debouncedQuery && results && results.length > 0 && (
+      {isOpen && debouncedQuery.length >= 2 && results && results.length > 0 && (
         <div className="absolute top-full mt-2 w-full bg-white border border-gray-200 rounded-lg shadow-lg z-50 max-h-80 overflow-y-auto">
           {results.map((entity) => (
             <button
@@ -83,7 +91,7 @@ export function GlobalSearch() {
         </div>
       )}
       
-      {isOpen && debouncedQuery && results && results.length === 0 && (
+      {isOpen && debouncedQuery.length >= 2 && results && results.length === 0 && (
         <div className="absolute top-full mt-2 w-full bg-white border border-gray-200 rounded-lg shadow-lg z-50 px-4 py-3 text-gray-500 text-sm">
           No results found
         </div>
