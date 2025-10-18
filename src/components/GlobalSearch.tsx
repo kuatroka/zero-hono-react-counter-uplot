@@ -1,7 +1,16 @@
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useQuery } from '@rocicorp/zero/react';
-import { zero } from '../zero-client';
+import { useQuery } from '@tanstack/react-query';
+
+interface SearchResult {
+  id: string;
+  name: string;
+  category: string;
+  description: string | null;
+  value: number | null;
+  created_at: number;
+  similarity_score: number;
+}
 
 export function GlobalSearch() {
   const [query, setQuery] = useState('');
@@ -28,19 +37,17 @@ export function GlobalSearch() {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  const [allResults] = useQuery(
-    debouncedQuery.length >= 2
-      ? zero.query.entities.limit(100)
-      : zero.query.entities.limit(0)
-  );
-
-  const results = allResults
-    ? allResults
-        .filter((entity) =>
-          entity.name.toLowerCase().includes(debouncedQuery.toLowerCase())
-        )
-        .slice(0, 5)
-    : [];
+  const { data: results = [] } = useQuery<SearchResult[]>({
+    queryKey: ['search', debouncedQuery],
+    queryFn: async () => {
+      if (debouncedQuery.length < 2) return [];
+      const response = await fetch(`/api/search?q=${encodeURIComponent(debouncedQuery)}`);
+      if (!response.ok) throw new Error('Search failed');
+      return response.json();
+    },
+    enabled: debouncedQuery.length >= 2,
+    staleTime: 30000,
+  });
 
   const handleSelect = (entityId: string) => {
     navigate(`/entities/${entityId}`);

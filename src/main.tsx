@@ -22,6 +22,7 @@ import { EntitiesList } from "./pages/EntitiesList";
 import { EntityDetail } from "./pages/EntityDetail";
 import { UserProfile } from "./pages/UserProfile";
 import { initZero } from "./zero-client";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
 const encodedJWT = Cookies.get("jwt");
 const decodedJWT = encodedJWT && decodeJwt(encodedJWT);
@@ -29,23 +30,34 @@ const userID = decodedJWT?.sub ? (decodedJWT.sub as string) : "anon";
 const server = import.meta.env.VITE_PUBLIC_SERVER;
 const auth = encodedJWT;
 
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      staleTime: 30000,
+      refetchOnWindowFocus: false,
+    },
+  },
+});
+
 function AppContent() {
   const z = useZero<Schema>();
   initZero(z);
   
   return (
-    <BrowserRouter>
-      <GlobalNav />
-      <Routes>
-        <Route path="/" element={<HomePage />} />
-        <Route path="/counter" element={<CounterPage />} />
-        <Route path="/entities" element={<EntitiesList />} />
-        <Route path="/investors" element={<EntitiesList initialCategory="investor" />} />
-        <Route path="/assets" element={<EntitiesList initialCategory="asset" />} />
-        <Route path="/entities/:id" element={<EntityDetail />} />
-        <Route path="/profile" element={<UserProfile />} />
-      </Routes>
-    </BrowserRouter>
+    <QueryClientProvider client={queryClient}>
+      <BrowserRouter>
+        <GlobalNav />
+        <Routes>
+          <Route path="/" element={<HomePage />} />
+          <Route path="/counter" element={<CounterPage />} />
+          <Route path="/entities" element={<EntitiesList />} />
+          <Route path="/investors" element={<EntitiesList initialCategory="investor" />} />
+          <Route path="/assets" element={<EntitiesList initialCategory="asset" />} />
+          <Route path="/entities/:id" element={<EntityDetail />} />
+          <Route path="/profile" element={<UserProfile />} />
+        </Routes>
+      </BrowserRouter>
+    </QueryClientProvider>
   );
 }
 
