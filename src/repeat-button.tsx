@@ -50,6 +50,7 @@ export function RepeatButton({ onTrigger, ...props }: RepeatButtonProps) {
   return (
     <button
       {...props}
+      className={`btn btn-sm ${props.className || ""}`}
       onMouseDown={(e) => {
         start(e);
         props.onMouseDown?.(e);

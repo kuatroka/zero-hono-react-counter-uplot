@@ -23,6 +23,7 @@ import { RepeatButton } from "./repeat-button";
 import { Schema } from "./schema";
 import { randomMessage } from "./test-data";
 import { CounterPage } from "./components/CounterPage";
+import { ThemeSwitcher } from "./components/ThemeSwitcher";
 
 const encodedJWT = Cookies.get("jwt");
 const decodedJWT = encodedJWT && decodeJwt(encodedJWT);
@@ -74,170 +75,184 @@ function IndexComponent() {
   const viewer = users.find((user) => user.id === z.userID);
 
   return (
-    <>
-      <div className="controls">
-        <div>
-          <RepeatButton
-            onTrigger={() => {
-              z.mutate.message.insert(randomMessage(users, mediums));
-            }}
-          >
-            Add Messages
-          </RepeatButton>
-          <RepeatButton
-            onTrigger={(e) => {
-              if (!viewer && !e.shiftKey) {
-                alert(
-                  "You must be logged in to delete. Hold shift to try anyway."
-                );
-                return false;
-              }
-              if (allMessages.length === 0) {
-                return false;
-              }
-
-              const index = randInt(allMessages.length);
-              z.mutate.message.delete({ id: allMessages[index].id });
-              return true;
-            }}
-          >
-            Remove Messages
-          </RepeatButton>
-          <em>(hold down buttons to repeat)</em>
-        </div>
-        <div
-          style={{
-            justifyContent: "end",
-          }}
-        >
-          {viewer && `Logged in as ${viewer.name}`}
-          {viewer ? (
-            <button
-              onMouseDown={() => {
-                Cookies.remove("jwt");
-                location.reload();
-              }}
-            >
-              Logout
-            </button>
-          ) : (
-            <button
-              onMouseDown={() => {
-                fetch("/api/login")
-                  .then(() => {
+    <div className="min-h-screen bg-base-200">
+      <div className="container mx-auto px-4 py-8 max-w-7xl">
+        <div className="flex flex-col gap-6">
+          <header className="flex justify-between items-center flex-wrap gap-4">
+            <h1 className="text-3xl font-bold">Messages</h1>
+            <div className="flex items-center gap-4">
+              <ThemeSwitcher />
+              {viewer && <span className="text-sm">Logged in as <strong>{viewer.name}</strong></span>}
+              {viewer ? (
+                <button
+                  className="btn btn-sm btn-outline"
+                  onMouseDown={() => {
+                    Cookies.remove("jwt");
                     location.reload();
-                  })
-                  .catch((error) => {
-                    alert(`Failed to login: ${error.message}`);
-                  });
-              }}
-            >
-              Login
-            </button>
-          )}
-        </div>
-      </div>
-      <div className="controls">
-        <div>
-          <a href="/counter" className="nav-link">
-            View Counter & Charts →
-          </a>
-        </div>
-      </div>
-      <div className="controls">
-        <div>
-          From:
-          <select
-            onChange={(e) => setFilterUser(e.target.value)}
-            style={{ flex: 1 }}
-          >
-            <option key={""} value="">
-              Sender
-            </option>
-            {users.map((user) => (
-              <option key={user.id} value={user.id}>
-                {user.name}
-              </option>
-            ))}
-          </select>
-        </div>
-        <div>
-          Contains:
-          <input
-            type="text"
-            placeholder="message"
-            onChange={(e) => setFilterText(e.target.value)}
-            style={{ flex: 1 }}
-          />
-        </div>
-      </div>
-      <div className="controls">
-        <em>
-          {!hasFilters ? (
-            <>Showing all {filteredMessages.length} messages</>
-          ) : (
-            <>
-              Showing {filteredMessages.length} of {allMessages.length}{" "}
-              messages. Try opening{" "}
-              <a href="/" target="_blank">
-                another tab
-              </a>{" "}
-              to see them all!
-            </>
-          )}
-        </em>
-      </div>
-      {filteredMessages.length === 0 ? (
-        <h3>
-          <em>No posts found 😢</em>
-        </h3>
-      ) : (
-        <table border={1} cellSpacing={0} cellPadding={6} width="100%">
-          <thead>
-            <tr>
-              <th>Sender</th>
-              <th>Medium</th>
-              <th>Message</th>
-              <th>Labels</th>
-              <th>Sent</th>
-              <th>Edit</th>
-            </tr>
-          </thead>
-          <tbody>
-            {filteredMessages.map((message) => (
-              <tr key={message.id}>
-                <td align="left">{message.sender?.name}</td>
-                <td align="left">{message.medium?.name}</td>
-                <td align="left">{message.body}</td>
-                <td align="left">{message.labels.join(", ")}</td>
-                <td align="right">{formatDate(message.timestamp)}</td>
-                <td
-                  onMouseDown={(e) => {
-                    if (message.senderID !== z.userID && !e.shiftKey) {
-                      alert(
-                        "You aren't logged in as the sender of this message. Editing won't be permitted. Hold the shift key to try anyway."
-                      );
-                      return;
-                    }
-
-                    const body = prompt("Edit message", message.body);
-                    if (body === null) {
-                      return;
-                    }
-                    z.mutate.message.update({
-                      id: message.id,
-                      body,
-                    });
                   }}
                 >
-                  ✏️
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      )}
-    </>
+                  Logout
+                </button>
+              ) : (
+                <button
+                  className="btn btn-sm btn-primary"
+                  onMouseDown={() => {
+                    fetch("/api/login")
+                      .then(() => {
+                        location.reload();
+                      })
+                      .catch((error) => {
+                        alert(`Failed to login: ${error.message}`);
+                      });
+                  }}
+                >
+                  Login
+                </button>
+              )}
+            </div>
+          </header>
+
+          <div className="flex flex-wrap gap-4 items-center">
+            <RepeatButton
+              onTrigger={() => {
+                z.mutate.message.insert(randomMessage(users, mediums));
+              }}
+            >
+              Add Messages
+            </RepeatButton>
+            <RepeatButton
+              onTrigger={(e) => {
+                if (!viewer && !e.shiftKey) {
+                  alert(
+                    "You must be logged in to delete. Hold shift to try anyway."
+                  );
+                  return false;
+                }
+                if (allMessages.length === 0) {
+                  return false;
+                }
+
+                const index = randInt(allMessages.length);
+                z.mutate.message.delete({ id: allMessages[index].id });
+                return true;
+              }}
+            >
+              Remove Messages
+            </RepeatButton>
+            <span className="text-sm italic opacity-70">(hold down buttons to repeat)</span>
+          </div>
+
+          <div className="flex justify-center">
+            <a href="/counter" className="btn btn-primary">
+              View Counter & Charts →
+            </a>
+          </div>
+
+          <div className="card bg-base-100 shadow-lg">
+            <div className="card-body">
+              <h2 className="card-title">Filters</h2>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="form-control">
+                  <label className="label">
+                    <span className="label-text">From:</span>
+                  </label>
+                  <select
+                    className="select select-bordered w-full"
+                    onChange={(e) => setFilterUser(e.target.value)}
+                  >
+                    <option value="">All Senders</option>
+                    {users.map((user) => (
+                      <option key={user.id} value={user.id}>
+                        {user.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className="form-control">
+                  <label className="label">
+                    <span className="label-text">Contains:</span>
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="Search message text..."
+                    className="input input-bordered w-full"
+                    onChange={(e) => setFilterText(e.target.value)}
+                  />
+                </div>
+              </div>
+              <div className="text-sm italic opacity-70 mt-2">
+                {!hasFilters ? (
+                  <>Showing all {filteredMessages.length} messages</>
+                ) : (
+                  <>
+                    Showing {filteredMessages.length} of {allMessages.length}{" "}
+                    messages. Try opening{" "}
+                    <a href="/" target="_blank" className="link link-primary">
+                      another tab
+                    </a>{" "}
+                    to see them all!
+                  </>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {filteredMessages.length === 0 ? (
+            <div className="text-center py-12">
+              <h3 className="text-2xl italic opacity-70">No posts found 😢</h3>
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="table table-zebra">
+                <thead>
+                  <tr>
+                    <th>Sender</th>
+                    <th>Medium</th>
+                    <th>Message</th>
+                    <th>Labels</th>
+                    <th>Sent</th>
+                    <th>Edit</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredMessages.map((message) => (
+                    <tr key={message.id}>
+                      <td>{message.sender?.name}</td>
+                      <td>{message.medium?.name}</td>
+                      <td>{message.body}</td>
+                      <td>{message.labels.join(", ")}</td>
+                      <td>{formatDate(message.timestamp)}</td>
+                      <td
+                        className="cursor-pointer hover:text-primary"
+                        onMouseDown={(e) => {
+                          if (message.senderID !== z.userID && !e.shiftKey) {
+                            alert(
+                              "You aren't logged in as the sender of this message. Editing won't be permitted. Hold the shift key to try anyway."
+                            );
+                            return;
+                          }
+
+                          const body = prompt("Edit message", message.body);
+                          if (body === null) {
+                            return;
+                          }
+                          z.mutate.message.update({
+                            id: message.id,
+                            body,
+                          });
+                        }}
+                      >
+                        ✏️
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
   );
 }
 
