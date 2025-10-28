@@ -222,6 +222,24 @@ To remove all database volumes and Zero replica files:
 bun run dev:clean
 ```
 
+### Troubleshooting
+
+**Port Conflicts:**
+
+If you get "address already in use" errors for ports 4849 or 4848, kill the stuck processes:
+
+```bash
+# Kill processes using Zero Cache ports
+lsof -ti:4849 | xargs kill -9
+lsof -ti:4848 | xargs kill -9
+```
+
+**Check what's running on ports:**
+```bash
+lsof -i :4849
+lsof -i :4848
+```
+
 ## Performance Benchmarking
 
 This project uses Bun as the runtime for the Hono API server, which provides significant performance improvements over Node.js.
@@ -308,7 +326,7 @@ If you see an error like "Neither podman nor docker is installed or functional":
 If you encounter errors related to the `@rocicorp/zero-sqlite3` native module (such as module loading errors or crashes), you may need to rebuild it from source for your specific platform:
 
 ```bash
-npm rebuild @rocicorp/zero-sqlite3 --build-from-source
+npm rebuild @rocicorp/zero-sqlite3
 ```
 
 This is particularly important when:
