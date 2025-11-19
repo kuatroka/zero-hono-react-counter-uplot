@@ -17,12 +17,6 @@ export function GlobalNav() {
               <Link to="/entities" className="hover:text-gray-300 transition-colors">
                 All Entities
               </Link>
-              <Link to="/investors" className="hover:text-gray-300 transition-colors">
-                Investors
-              </Link>
-              <Link to="/assets" className="hover:text-gray-300 transition-colors">
-                Assets
-              </Link>
             </div>
           </div>
           

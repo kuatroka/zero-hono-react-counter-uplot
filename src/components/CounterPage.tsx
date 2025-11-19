@@ -1,60 +1,96 @@
-import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import * as counterService from "../services/counter";
-import * as quartersService from "../services/quarters";
+import { useQuery, useZero } from "@rocicorp/zero/react";
+import { useEffect, useState } from "react";
+import { queries } from "../zero/queries";
 import { QuarterChart } from "./charts/QuarterChart";
 import { chartMetaList } from "./charts/factory";
 import { ThemeSwitcher } from "./ThemeSwitcher";
+import { Schema } from "../schema";
 
 export function CounterPage() {
-  const [counterValue, setCounterValue] = useState<number>(0);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [chartSeries, setChartSeries] = useState<{
-    labels: string[];
-    values: number[];
-  }>({ labels: [], values: [] });
-
+  const z = useZero<Schema>();
+  const isLoggedIn = z.userID !== "anon";
+  const userCounterKey = isLoggedIn ? z.userID : "__guest__";
+  const [guestCounter, setGuestCounter] = useState(0);
+  
   useEffect(() => {
-    const loadData = async () => {
-      try {
-        setLoading(true);
-        const [value, series] = await Promise.all([
-          counterService.getValue(),
-          quartersService.getChartSeries(),
-        ]);
-        setCounterValue(value);
-        setChartSeries(series);
-        setError(null);
-      } catch (err) {
-        setError(err instanceof Error ? err.message : "Failed to load data");
-      } finally {
-        setLoading(false);
-      }
-    };
+    if (isLoggedIn) {
+      setGuestCounter(0);
+    }
+  }, [isLoggedIn]);
+  
+  const handleLogin = async () => {
+    try {
+      await fetch("/api/login");
+      location.reload();
+    } catch (error) {
+      alert(`Failed to login: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  };
+  
+  const [counterRows] = useQuery(queries.counterCurrent("main"));
+  const [userCounterRows] = useQuery(queries.userCounter(userCounterKey));
+  const [quarters] = useQuery(queries.quartersSeries());
 
-    loadData();
-  }, []);
+  const counter = counterRows[0];
+  const userCounter = isLoggedIn ? userCounterRows[0] : undefined;
+  const privateCounterValue = isLoggedIn ? userCounter?.value ?? 0 : guestCounter;
 
   const handleIncrement = async () => {
-    try {
-      const newValue = await counterService.increment();
-      setCounterValue(newValue);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to increment");
-    }
+    if (!counter) return;
+    await z.mutate.counters.update({
+      id: counter.id,
+      value: counter.value + 1,
+    });
   };
 
   const handleDecrement = async () => {
-    try {
-      const newValue = await counterService.decrement();
-      setCounterValue(newValue);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to decrement");
+    if (!counter) return;
+    await z.mutate.counters.update({
+      id: counter.id,
+      value: counter.value - 1,
+    });
+  };
+
+  const handleUserIncrement = async () => {
+    if (!isLoggedIn) {
+      setGuestCounter((value) => value + 1);
+      return;
+    }
+    const currentValue = userCounter?.value ?? 0;
+    if (userCounter) {
+      await z.mutate.user_counters.update({
+        userId: z.userID,
+        value: currentValue + 1,
+      });
+    } else {
+      await z.mutate.user_counters.insert({
+        userId: z.userID,
+        value: 1,
+      });
     }
   };
 
-  if (loading) {
+  const handleUserDecrement = async () => {
+    if (!isLoggedIn) {
+      setGuestCounter((value) => value - 1);
+      return;
+    }
+    const currentValue = userCounter?.value ?? 0;
+    if (userCounter) {
+      await z.mutate.user_counters.update({
+        userId: z.userID,
+        value: currentValue - 1,
+      });
+    } else {
+      await z.mutate.user_counters.insert({
+        userId: z.userID,
+        value: -1,
+      });
+    }
+  };
+
+  if (!counter || quarters.length === 0) {
     return (
       <div className="min-h-screen bg-base-200 flex items-center justify-center">
         <span className="loading loading-spinner loading-lg"></span>
@@ -62,19 +98,10 @@ export function CounterPage() {
     );
   }
 
-  if (error) {
-    return (
-      <div className="min-h-screen bg-base-200 flex flex-col items-center justify-center gap-4">
-        <div className="alert alert-error max-w-md">
-          <svg xmlns="http://www.w3.org/2000/svg" className="stroke-current shrink-0 h-6 w-6" fill="none" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" />
-          </svg>
-          <span>Error: {error}</span>
-        </div>
-        <Link to="/" className="btn btn-primary">Back to Home</Link>
-      </div>
-    );
-  }
+  const chartSeries = {
+    labels: quarters.map((q) => q.quarter),
+    values: quarters.map((q) => q.value),
+  };
 
   const [primaryChart, ...remainingCharts] = chartMetaList;
 
@@ -92,17 +119,61 @@ export function CounterPage() {
             <ThemeSwitcher />
           </header>
 
-          <section className="flex justify-center">
-            <div className="join">
-              <button onClick={handleDecrement} className="btn btn-square join-item btn-primary text-2xl">
-                −
-              </button>
-              <div className="join-item w-32 text-center text-3xl font-semibold bg-base-300 flex items-center justify-center">
-                {counterValue}
+          <section className="grid gap-6 md:grid-cols-2">
+            <div className="card bg-base-100 shadow-xl">
+              <div className="card-body items-center">
+                <h2 className="card-title">Global Counter</h2>
+                <p className="text-sm opacity-70 mb-4">Synced across all users</p>
+                <div className="join">
+                  <button onClick={handleDecrement} className="btn btn-square join-item btn-primary text-2xl">
+                    −
+                  </button>
+                  <div className="join-item w-32 text-center text-3xl font-semibold bg-base-300 flex items-center justify-center">
+                    {counter.value}
+                  </div>
+                  <button onClick={handleIncrement} className="btn btn-square join-item btn-primary text-2xl">
+                    +
+                  </button>
+                </div>
               </div>
-              <button onClick={handleIncrement} className="btn btn-square join-item btn-primary text-2xl">
-                +
-              </button>
+            </div>
+
+            <div className="card bg-base-100 shadow-xl">
+              <div className="card-body items-center">
+                <h2 className="card-title">Your Counter</h2>
+                <p className="text-sm opacity-70 mb-4">Private to you only</p>
+                <div className="join">
+                  <button
+                    onClick={handleUserDecrement}
+                    className="btn btn-square join-item btn-secondary text-2xl"
+                  >
+                    −
+                  </button>
+                  <div className="join-item w-32 text-center text-3xl font-semibold bg-base-300 flex items-center justify-center">
+                    {privateCounterValue}
+                  </div>
+                  <button
+                    onClick={handleUserIncrement}
+                    className="btn btn-square join-item btn-secondary text-2xl"
+                  >
+                    +
+                  </button>
+                </div>
+                {!isLoggedIn ? (
+                  <div className="mt-4 text-center text-sm">
+                    <p className="mb-2">
+                      This value stays local and resets when you leave. Sign in to sync it.
+                    </p>
+                    <button className="btn btn-sm" onClick={handleLogin}>
+                      Login
+                    </button>
+                  </div>
+                ) : (
+                  <p className="mt-4 text-center text-sm opacity-70">
+                    This value is stored privately for {z.userID}.
+                  </p>
+                )}
+              </div>
             </div>
           </section>
 

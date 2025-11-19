@@ -6,6 +6,7 @@
 // for more complex examples, including many-to-many.
 
 import {
+  createBuilder,
   createSchema,
   definePermissions,
   ExpressionBuilder,
@@ -71,6 +72,13 @@ const entity = table("entities")
   })
   .primaryKey("id");
 
+const userCounter = table("user_counters")
+  .columns({
+    userId: string().from("user_id"),
+    value: number(),
+  })
+  .primaryKey("userId");
+
 const messageRelationships = relationships(message, ({ one }) => ({
   sender: one({
     sourceField: ["senderID"],
@@ -85,9 +93,11 @@ const messageRelationships = relationships(message, ({ one }) => ({
 }));
 
 export const schema = createSchema({
-  tables: [user, medium, message, counter, valueQuarter, entity],
+  tables: [user, medium, message, counter, valueQuarter, entity, userCounter],
   relationships: [messageRelationships],
 });
+
+export const builder = createBuilder(schema);
 
 export type Schema = typeof schema;
 export type Message = Row<typeof schema.tables.message>;
@@ -96,6 +106,7 @@ export type User = Row<typeof schema.tables.user>;
 export type Counter = Row<typeof schema.tables.counters>;
 export type ValueQuarter = Row<typeof schema.tables.value_quarters>;
 export type Entity = Row<typeof schema.tables.entities>;
+export type UserCounter = Row<typeof schema.tables.user_counters>;
 
 // The contents of your decoded JWT.
 type AuthData = {
@@ -112,6 +123,11 @@ export const permissions = definePermissions<AuthData, Schema>(schema, () => {
     authData: AuthData,
     { cmp }: ExpressionBuilder<Schema, "message">
   ) => cmp("senderID", "=", authData.sub ?? "");
+
+  const allowIfUserCounterOwner = (
+    authData: AuthData,
+    { cmp }: ExpressionBuilder<Schema, "user_counters">
+  ) => cmp("userId", "=", authData.sub ?? "");
 
   return {
     medium: {
@@ -138,6 +154,10 @@ export const permissions = definePermissions<AuthData, Schema>(schema, () => {
     counters: {
       row: {
         select: ANYONE_CAN,
+        update: {
+          preMutation: ANYONE_CAN,
+          postMutation: ANYONE_CAN,
+        },
       },
     },
     value_quarters: {
@@ -148,6 +168,16 @@ export const permissions = definePermissions<AuthData, Schema>(schema, () => {
     entities: {
       row: {
         select: ANYONE_CAN,
+      },
+    },
+    user_counters: {
+      row: {
+        select: [allowIfUserCounterOwner],
+        insert: [allowIfUserCounterOwner],
+        update: {
+          preMutation: [allowIfUserCounterOwner],
+          postMutation: [allowIfUserCounterOwner],
+        },
       },
     },
   } satisfies PermissionsConfig<AuthData, Schema>;

@@ -1,8 +1,7 @@
 import { Hono } from "hono";
 import { setCookie } from "hono/cookie";
 import { SignJWT } from "jose";
-import counter from "./routes/counter";
-import quarters from "./routes/quarters";
+import zeroRoutes from "./routes/zero/get-queries";
 
 export const config = {
   runtime: "edge",
@@ -10,8 +9,7 @@ export const config = {
 
 export const app = new Hono().basePath("/api");
 
-app.route("/counter", counter);
-app.route("/quarters", quarters);
+app.route("/zero", zeroRoutes);
 
 // See seed.sql
 // In real life you would of course authenticate the user however you like.

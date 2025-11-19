@@ -1,0 +1,5 @@
+-- DuckDB configuration is handled via postgresql.conf or ALTER SYSTEM
+-- The DUCKDB_FORCE_EXECUTION environment variable can be set in docker-compose.yml
+-- and will be picked up by the extension if needed.
+-- 
+-- For now, we keep the default behavior (off) unless explicitly configured.
