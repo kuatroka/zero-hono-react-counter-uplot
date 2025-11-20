@@ -12,7 +12,7 @@ bun run dev:clean && bun run dev:db-up  # Clean restart
 
 ## Connection
 
-- Host: localhost:5430
+- Host: localhost:5432
 - User: `user` / Password: `password`
 - Database: `postgres`
 

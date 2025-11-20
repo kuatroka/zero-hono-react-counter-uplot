@@ -316,7 +316,7 @@ const [results] = useQuery(queries.searchEntities(query, 5));
 **Implementation**:
 ```bash
 # .env (before)
-ZERO_UPSTREAM_DB="postgresql://user:password@127.0.0.1:5430/postgres"
+ZERO_UPSTREAM_DB="postgresql://user:password@127.0.0.1:5432/postgres"
 
 # .env (after)
 ZERO_MUTATE_URL="http://localhost:3000/api/zero/mutate"

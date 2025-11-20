@@ -20,6 +20,7 @@ import { ThemeSwitcher } from "./components/ThemeSwitcher";
 import { GlobalNav } from "./components/GlobalNav";
 import { EntitiesList } from "./pages/EntitiesList";
 import { EntityDetail } from "./pages/EntityDetail";
+import { CikDetail } from "./pages/CikDetail";
 import { UserProfile } from "./pages/UserProfile";
 import { initZero } from "./zero-client";
 
@@ -49,6 +50,7 @@ function AppContent() {
         <Route path="/investors" element={<EntitiesList initialCategory="investor" />} />
         <Route path="/assets" element={<EntitiesList initialCategory="asset" />} />
         <Route path="/entities/:id" element={<EntityDetail />} />
+        <Route path="/cik/:cik" element={<CikDetail />} />
         <Route path="/profile" element={<UserProfile />} />
       </Routes>
     </BrowserRouter>

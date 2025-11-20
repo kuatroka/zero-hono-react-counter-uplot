@@ -1,5 +1,6 @@
 import { Link } from 'react-router-dom';
 import { GlobalSearch } from './GlobalSearch';
+import { CikSearch } from './CikSearch';
 
 export function GlobalNav() {
   return (
@@ -22,6 +23,7 @@ export function GlobalNav() {
           
           <div className="flex items-center gap-4">
             <GlobalSearch />
+            <CikSearch />
             <Link to="/profile" className="hover:text-gray-300 transition-colors">
               Profile
             </Link>

@@ -68,6 +68,25 @@ export const queries = {
     z.tuple([z.number().int().positive().max(500)]),
     (limit) => builder.entities.orderBy("created_at", "desc").limit(limit)
   ),
+  cikSearch: syncedQuery(
+    "cik.search",
+    z.tuple([z.string(), z.number().int().min(0).max(50)]),
+    (rawSearch, limit) => {
+      const search = rawSearch.trim();
+      const base = builder.cik_directory.orderBy("cik_name", "asc");
+      if (!search) {
+        return base.limit(limit);
+      }
+      return base
+        .where("cik_name", "ILIKE", `%${escapeLike(search)}%`)
+        .limit(limit);
+    }
+  ),
+  cikById: syncedQuery(
+    "cik.byId",
+    z.tuple([z.string().min(1)]),
+    (cik) => builder.cik_directory.where("cik", "=", cik).limit(1)
+  ),
   counterCurrent: syncedQuery(
     "counter.current",
     z.tuple([z.string()]),
@@ -82,6 +101,44 @@ export const queries = {
     "user_counter.current",
     z.tuple([z.string()]),
     (userId) => builder.user_counters.where("userId", "=", userId).limit(1)
+  ),
+  searchesByCategory: syncedQuery(
+    "searches.byCategory",
+    z.tuple([
+      z.enum(["all", "superinvestors", "assets", "periods"]),
+      z.number().int().min(0).max(1000),
+    ]),
+    (category, limit) => {
+      const base = builder.searches.orderBy("name", "asc");
+      if (category === "all") {
+        return base.limit(limit);
+      }
+      return base.where("category", "=", category).limit(limit);
+    }
+  ),
+  searchesByName: syncedQuery(
+    "searches.byName",
+    z.tuple([z.string(), z.number().int().min(0).max(100)]),
+    (rawSearch, limit) => {
+      const search = rawSearch.trim();
+      const base = builder.searches.orderBy("name", "asc");
+      if (!search) {
+        return base.limit(limit);
+      }
+      return base
+        .where("name", "ILIKE", `%${escapeLike(search)}%`)
+        .limit(limit);
+    }
+  ),
+  searchById: syncedQuery(
+    "searches.byId",
+    z.tuple([z.number().int()]),
+    (id) => builder.searches.where("id", "=", id).limit(1)
+  ),
+  searchByCode: syncedQuery(
+    "searches.byCode",
+    z.tuple([z.string().min(1)]),
+    (code) => builder.searches.where("code", "=", code).limit(1)
   ),
 } as const;
 

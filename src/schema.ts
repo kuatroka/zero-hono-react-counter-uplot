@@ -61,6 +61,13 @@ const valueQuarter = table("value_quarters")
   })
   .primaryKey("quarter");
 
+const cikDirectory = table("cik_directory")
+  .columns({
+    cik: string(),
+    cik_name: string(),
+  })
+  .primaryKey("cik");
+
 const entity = table("entities")
   .columns({
     id: string(),
@@ -79,6 +86,15 @@ const userCounter = table("user_counters")
   })
   .primaryKey("userId");
 
+const searches = table("searches")
+  .columns({
+    id: number(),
+    code: string(),
+    name: string(),
+    category: string(),
+  })
+  .primaryKey("id");
+
 const messageRelationships = relationships(message, ({ one }) => ({
   sender: one({
     sourceField: ["senderID"],
@@ -93,7 +109,7 @@ const messageRelationships = relationships(message, ({ one }) => ({
 }));
 
 export const schema = createSchema({
-  tables: [user, medium, message, counter, valueQuarter, entity, userCounter],
+  tables: [user, medium, message, counter, valueQuarter, cikDirectory, entity, userCounter, searches],
   relationships: [messageRelationships],
 });
 
@@ -105,8 +121,10 @@ export type Medium = Row<typeof schema.tables.medium>;
 export type User = Row<typeof schema.tables.user>;
 export type Counter = Row<typeof schema.tables.counters>;
 export type ValueQuarter = Row<typeof schema.tables.value_quarters>;
+export type CikDirectory = Row<typeof schema.tables.cik_directory>;
 export type Entity = Row<typeof schema.tables.entities>;
 export type UserCounter = Row<typeof schema.tables.user_counters>;
+export type Search = Row<typeof schema.tables.searches>;
 
 // The contents of your decoded JWT.
 type AuthData = {
@@ -165,6 +183,11 @@ export const permissions = definePermissions<AuthData, Schema>(schema, () => {
         select: ANYONE_CAN,
       },
     },
+    cik_directory: {
+      row: {
+        select: ANYONE_CAN,
+      },
+    },
     entities: {
       row: {
         select: ANYONE_CAN,
@@ -178,6 +201,11 @@ export const permissions = definePermissions<AuthData, Schema>(schema, () => {
           preMutation: [allowIfUserCounterOwner],
           postMutation: [allowIfUserCounterOwner],
         },
+      },
+    },
+    searches: {
+      row: {
+        select: ANYONE_CAN,
       },
     },
   } satisfies PermissionsConfig<AuthData, Schema>;
