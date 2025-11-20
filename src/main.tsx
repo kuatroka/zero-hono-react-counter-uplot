@@ -50,7 +50,7 @@ function AppContent() {
         <Route path="/investors" element={<EntitiesList initialCategory="investor" />} />
         <Route path="/assets" element={<EntitiesList initialCategory="asset" />} />
         <Route path="/entities/:id" element={<EntityDetail />} />
-        <Route path="/cik/:cik" element={<CikDetail />} />
+        <Route path="/:category/:code" element={<CikDetail />} />
         <Route path="/profile" element={<UserProfile />} />
       </Routes>
     </BrowserRouter>

@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery } from '@rocicorp/zero/react';
-import { queries } from '../zero/queries';
+import { getZero } from '../zero-client';
 
 export function CikSearch() {
   const [query, setQuery] = useState('');
@@ -10,6 +10,7 @@ export function CikSearch() {
   const [selectedIndex, setSelectedIndex] = useState(-1);
   const navigate = useNavigate();
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const itemRefs = useRef<(HTMLButtonElement | null)[]>([]);
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -29,18 +30,49 @@ export function CikSearch() {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
+  const z = getZero();
   const trimmedQuery = query.trim();
-  const effectiveQuery = debouncedQuery;
 
-  const [results] = useQuery(queries.cikSearch(effectiveQuery, 5));
-  const visibleResults = results ?? [];
+  // Search both name and code columns
+  const nameQuery = trimmedQuery
+    ? z.query.searches
+      .where('name', 'ILIKE', `%${trimmedQuery}%`)
+      .limit(10)
+    : z.query.searches.limit(0);
+
+  const codeQuery = trimmedQuery
+    ? z.query.searches
+      .where('code', 'ILIKE', `%${trimmedQuery}%`)
+      .limit(10)
+    : z.query.searches.limit(0);
+
+  const queryOpts = query !== debouncedQuery ? undefined : ({ ttl: 'none' } as const);
+
+  const [nameResults] = useQuery(nameQuery, queryOpts);
+  const [codeResults] = useQuery(codeQuery, queryOpts);
+
+  // Merge results and deduplicate by id
+  const allResults = [...(nameResults ?? []), ...(codeResults ?? [])];
+  const uniqueResultsMap = new Map();
+  allResults.forEach(row => {
+    if (!uniqueResultsMap.has(row.id)) {
+      uniqueResultsMap.set(row.id, row);
+    }
+  });
+  const visibleResults = Array.from(uniqueResultsMap.values()).slice(0, 10);
 
   useEffect(() => {
     setSelectedIndex(-1);
   }, [trimmedQuery, visibleResults.length]);
 
-  const handleSelect = (cik: string) => {
-    navigate(`/cik/${encodeURIComponent(cik)}`);
+  const handleSelect = (row: any) => {
+    if (!row) return;
+    const category = row.category;
+    const code = row.code;
+    if (!category || !code) {
+      return;
+    }
+    navigate(`/${encodeURIComponent(category)}/${encodeURIComponent(code)}`);
     setQuery('');
     setIsOpen(false);
     setSelectedIndex(-1);
@@ -50,7 +82,18 @@ export function CikSearch() {
     if (!visibleResults.length) return;
     setIsOpen(true);
     setSelectedIndex((prev) => {
-      const next = (prev + delta + visibleResults.length) % visibleResults.length;
+      // Clamp the selection within bounds instead of wrapping
+      const next = Math.max(0, Math.min(visibleResults.length - 1, prev + delta));
+
+      // Only scroll if the selection actually changed
+      if (next !== prev) {
+        setTimeout(() => {
+          itemRefs.current[next]?.scrollIntoView({
+            block: 'nearest',
+            behavior: 'smooth'
+          });
+        }, 0);
+      }
       return next;
     });
   };
@@ -80,7 +123,7 @@ export function CikSearch() {
     }
     if (e.key === 'Enter' && selectedIndex >= 0 && visibleResults[selectedIndex]) {
       e.preventDefault();
-      handleSelect(visibleResults[selectedIndex].cik as string);
+      handleSelect(visibleResults[selectedIndex]);
     }
   };
 
@@ -95,29 +138,29 @@ export function CikSearch() {
         }}
         onFocus={() => query && setIsOpen(true)}
         onKeyDown={handleKeyDown}
-        placeholder="Search CIK names..."
+        placeholder="Search names or codes..."
         className="w-64 px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white text-gray-900"
       />
 
       {isOpen && trimmedQuery && visibleResults.length > 0 && (
-        <div className="absolute top-full mt-2 w-full bg-white border border-gray-200 rounded-lg shadow-lg z-50 max-h-80 overflow-y-auto">
+        <div className="absolute top-full mt-2 w-full bg-white border border-gray-200 rounded-lg shadow-lg z-50 max-h-80 overflow-y-scroll scrollbar-visible">
           {visibleResults.map((row: any, index: number) => (
             <button
-              key={row.cik}
-              onClick={() => handleSelect(row.cik as string)}
+              key={row.id}
+              ref={(el) => { itemRefs.current[index] = el; }}
+              onClick={() => handleSelect(row)}
               onMouseEnter={() => setSelectedIndex(index)}
-              className={`w-full px-4 py-3 text-left flex items-center justify-between border-b border-gray-100 last:border-b-0 ${
-                selectedIndex === index ? 'bg-gray-100' : 'hover:bg-gray-100'
-              }`}
+              className={`w-full px-4 py-3 text-left flex items-center justify-between border-b border-gray-100 last:border-b-0 ${selectedIndex === index ? 'bg-gray-100' : 'hover:bg-gray-100'
+                }`}
             >
-              <span className="text-gray-900 font-medium">{row.cik_name}</span>
-              <span className="ml-2 text-xs text-gray-500">CIK: {row.cik}</span>
+              <span className="text-gray-900 font-medium">{row.name ?? row.code}</span>
+              <span className="ml-2 text-xs text-gray-500">{row.category} · {row.code}</span>
             </button>
           ))}
         </div>
       )}
 
-      {isOpen && trimmedQuery && results && results.length === 0 && (
+      {isOpen && trimmedQuery && nameResults && codeResults && nameResults.length === 0 && codeResults.length === 0 && (
         <div className="absolute top-full mt-2 w-full bg-white border border-gray-200 rounded-lg shadow-lg z-50 px-4 py-3 text-gray-500 text-sm">
           No results found
         </div>

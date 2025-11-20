@@ -31,15 +31,15 @@ export function GlobalSearch() {
 
   const z = getZero();
   const trimmedQuery = query.trim();
-  
+
   const searchQuery = trimmedQuery
     ? z.query.entities
-        .where('name', 'ILIKE', `%${trimmedQuery}%`)
-        .limit(5)
+      .where('name', 'ILIKE', `%${trimmedQuery}%`)
+      .limit(5)
     : z.query.entities.limit(0);
-  
+
   const queryOpts = query !== debouncedQuery ? undefined : ({ ttl: 'none' } as const);
-  
+
   const [results] = useQuery(searchQuery, queryOpts);
   const visibleResults = results ?? [];
 
@@ -106,7 +106,7 @@ export function GlobalSearch() {
         placeholder="Search investors or assets..."
         className="w-64 px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white text-gray-900"
       />
-      
+
       {isOpen && trimmedQuery && visibleResults.length > 0 && (
         <div className="absolute top-full mt-2 w-full bg-white border border-gray-200 rounded-lg shadow-lg z-50 max-h-80 overflow-y-auto">
           {visibleResults.map((entity, index) => (
@@ -114,23 +114,21 @@ export function GlobalSearch() {
               key={entity.id}
               onClick={() => handleSelect(entity.id)}
               onMouseEnter={() => setSelectedIndex(index)}
-              className={`w-full px-4 py-3 text-left flex items-center justify-between border-b border-gray-100 last:border-b-0 ${
-                selectedIndex === index ? 'bg-gray-100' : 'hover:bg-gray-100'
-              }`}
+              className={`w-full px-4 py-3 text-left flex items-center justify-between border-b border-gray-100 last:border-b-0 ${selectedIndex === index ? 'bg-gray-100' : 'hover:bg-gray-100'
+                }`}
             >
               <span className="text-gray-900 font-medium">{entity.name}</span>
-              <span className={`px-2 py-1 text-xs rounded font-medium ${
-                entity.category === 'investor' 
-                  ? 'bg-blue-100 text-blue-800' 
+              <span className={`px-2 py-1 text-xs rounded font-medium ${entity.category === 'investor'
+                  ? 'bg-blue-100 text-blue-800'
                   : 'bg-green-100 text-green-800'
-              }`}>
+                }`}>
                 {entity.category}
               </span>
             </button>
           ))}
         </div>
       )}
-      
+
       {isOpen && trimmedQuery && results && results.length === 0 && (
         <div className="absolute top-full mt-2 w-full bg-white border border-gray-200 rounded-lg shadow-lg z-50 px-4 py-3 text-gray-500 text-sm">
           No results found

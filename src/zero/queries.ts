@@ -68,25 +68,6 @@ export const queries = {
     z.tuple([z.number().int().positive().max(500)]),
     (limit) => builder.entities.orderBy("created_at", "desc").limit(limit)
   ),
-  cikSearch: syncedQuery(
-    "cik.search",
-    z.tuple([z.string(), z.number().int().min(0).max(50)]),
-    (rawSearch, limit) => {
-      const search = rawSearch.trim();
-      const base = builder.cik_directory.orderBy("cik_name", "asc");
-      if (!search) {
-        return base.limit(limit);
-      }
-      return base
-        .where("cik_name", "ILIKE", `%${escapeLike(search)}%`)
-        .limit(limit);
-    }
-  ),
-  cikById: syncedQuery(
-    "cik.byId",
-    z.tuple([z.string().min(1)]),
-    (cik) => builder.cik_directory.where("cik", "=", cik).limit(1)
-  ),
   counterCurrent: syncedQuery(
     "counter.current",
     z.tuple([z.string()]),
@@ -124,6 +105,14 @@ export const queries = {
       const base = builder.searches.orderBy("name", "asc");
       if (!search) {
         return base.limit(limit);
+      }
+      // Treat purely numeric input as a code (e.g. "7195"),
+      // everything else is assumed to be a name fragment.
+      const isCodeLike = /^[0-9]+$/.test(search);
+      if (isCodeLike) {
+        return base
+          .where("code", "ILIKE", `%${escapeLike(search)}%`)
+          .limit(limit);
       }
       return base
         .where("name", "ILIKE", `%${escapeLike(search)}%`)
