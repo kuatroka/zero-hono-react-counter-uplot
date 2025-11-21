@@ -26,7 +26,7 @@ services:
       - ./migrations/04_rollback_full_text_search.sql:/docker-entrypoint-initdb.d/05-migration-rollback.sql:ro
       - ./migrations/05_add_user_counters.sql:/docker-entrypoint-initdb.d/06-migration-user-counters.sql:ro
       - ./migrations/06_add_searches.sql:/docker-entrypoint-initdb.d/07-migration-searches.sql:ro
-      - ./init/03-configure-duckdb.sql:/docker-entrypoint-initdb.d/08-configure-duckdb.sql:ro
+      - ./migrations/07_add_superinvestors_assets_periods.sql:/docker-entrypoint-initdb.d/08-migration-superinvestors.sql:ro
 
 volumes:
   zstart_pgdata:
