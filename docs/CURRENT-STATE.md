@@ -97,31 +97,43 @@ A real-time analytics application demonstrating **Zero-sync** (Rocicorp's sync f
 
 ### Search Implementation
 
-**Zero-sync based (no REST API):**
+**Zero-sync based using Synced Queries (no REST API):**
 
 ```typescript
-// GlobalSearch.tsx
-const searchQuery = debouncedQuery.length >= 2
-  ? z.query.entities
-      .where('name', 'ILIKE', `%${debouncedQuery}%`)
-      .limit(5)
-  : z.query.entities.limit(0);
+// src/zero/queries.ts
+searchEntities: syncedQuery(
+  "entities.search",
+  z.tuple([z.string(), z.number().int().min(0).max(50)]),
+  (rawSearch, limit) => {
+    const search = rawSearch.trim();
+    if (!search) {
+      return builder.entities.limit(0);
+    }
+    return builder.entities
+      .where('name', 'ILIKE', `%${escapeLike(search)}%`)
+      .limit(limit);
+  }
+),
 
-const [results] = useQuery(searchQuery);
+// Component usage
+import { queries } from '../zero/queries';
+const [results] = useQuery(queries.searchEntities(debouncedQuery, 5));
 ```
 
 **Preloading:**
 
 ```typescript
 // main.tsx
-z.preload(
-  z.query.entities
-    .orderBy('created_at', 'desc')
-    .limit(500)
-);
+import { getZero } from './zero-client';
+import { queries } from './zero/queries';
+
+const z = getZero();
+z.preload(queries.recentEntities(500));
 ```
 
 **Benefits:**
+- Server-side query control and permission enforcement
+- Parameter validation with Zod schemas
 - Instant search (<10ms) over preloaded data
 - Case-insensitive substring matching
 - No network requests for cached data

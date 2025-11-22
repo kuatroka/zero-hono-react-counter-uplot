@@ -1,12 +1,12 @@
 import { useParams, Link } from 'react-router-dom';
 import { useQuery } from '@rocicorp/zero/react';
-import { zero } from '../zero-client';
+import { queries } from '../zero/queries';
 
 export function EntityDetail() {
   const { id } = useParams<{ id: string }>();
   
   const [entities] = useQuery(
-    zero.query.entities.where('id', id || '')
+    queries.entityById(id || '')
   );
   
   const entity = entities?.[0];

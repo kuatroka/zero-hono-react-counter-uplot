@@ -16,7 +16,9 @@ A real-time analytics application demonstrating Zero (Rocicorp's sync framework)
 - React Router 7.9.4 (client-side routing)
 - @rocicorp/zero 0.24 (real-time sync)
 - uPlot 1.6.32 (charting library)
-- DaisyUI 5.3.7 + Tailwind 4.1.14 (styling)
+- shadcn/ui + Tailwind 4.1.14 (styling)
+- Radix UI (headless component primitives)
+- Lucide React (icon library)
 - js-cookie (client-side cookie management)
 
 ### Backend

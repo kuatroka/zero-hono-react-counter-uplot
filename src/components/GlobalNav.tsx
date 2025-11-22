@@ -1,30 +1,31 @@
 import { Link } from 'react-router-dom';
-import { GlobalSearch } from './GlobalSearch';
 import { CikSearch } from './CikSearch';
 
 export function GlobalNav() {
   return (
-    <nav className="bg-gray-800 text-white shadow-lg">
+    <nav className="bg-background border-b border-border shadow-sm">
       <div className="container mx-auto px-4">
-        <div className="flex items-center justify-between h-16">
-          <div className="flex items-center gap-8">
-            <Link to="/" className="text-xl font-bold hover:text-gray-300 transition-colors">
+        <div className="flex items-center justify-between gap-4 h-16">
+          <div className="flex items-center gap-4 sm:gap-8 flex-shrink-0">
+            <Link to="/" className="text-lg sm:text-xl font-bold text-foreground hover:text-muted-foreground transition-colors">
               MyApp
             </Link>
-            <div className="flex items-center gap-6">
-              <Link to="/counter" className="hover:text-gray-300 transition-colors">
-                Counter
-              </Link>
-              <Link to="/entities" className="hover:text-gray-300 transition-colors">
-                All Entities
-              </Link>
-            </div>
+            <Link to="/counter" className="text-sm sm:text-base text-foreground hover:text-muted-foreground transition-colors">
+              Counter
+            </Link>
+            <Link to="/assets" className="text-sm sm:text-base text-foreground hover:text-muted-foreground transition-colors">
+              Assets
+            </Link>
+            <Link to="/superinvestors" className="text-sm sm:text-base text-foreground hover:text-muted-foreground transition-colors">
+              Superinvestors
+            </Link>
           </div>
           
-          <div className="flex items-center gap-4">
-            <GlobalSearch />
-            <CikSearch />
-            <Link to="/profile" className="hover:text-gray-300 transition-colors">
+          <div className="flex items-center gap-2 sm:gap-4 flex-1 sm:flex-initial justify-end">
+            <div className="flex-1 sm:flex-initial max-w-md">
+              <CikSearch />
+            </div>
+            <Link to="/profile" className="text-sm sm:text-base text-foreground hover:text-muted-foreground transition-colors flex-shrink-0">
               Profile
             </Link>
           </div>

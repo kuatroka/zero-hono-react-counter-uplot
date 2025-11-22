@@ -7,7 +7,6 @@ import { schema } from "./schema.ts";
 import Cookies from "js-cookie";
 import { decodeJwt } from "jose";
 import { BrowserRouter, Routes, Route, Link } from "react-router-dom";
-import { escapeLike } from "@rocicorp/zero";
 import { useQuery, useZero } from "@rocicorp/zero/react";
 import { useState } from "react";
 import { formatDate } from "./date";
@@ -22,7 +21,10 @@ import { EntitiesList } from "./pages/EntitiesList";
 import { EntityDetail } from "./pages/EntityDetail";
 import { CikDetail } from "./pages/CikDetail";
 import { UserProfile } from "./pages/UserProfile";
+import { AssetsTablePage } from "./pages/AssetsTable";
+import { SuperinvestorsTablePage } from "./pages/SuperinvestorsTable";
 import { initZero } from "./zero-client";
+import { queries } from "./zero/queries";
 
 const encodedJWT = Cookies.get("jwt");
 const decodedJWT = encodedJWT && decodeJwt(encodedJWT);
@@ -34,11 +36,7 @@ function AppContent() {
   const z = useZero<Schema>();
   initZero(z);
   
-  z.preload(
-    z.query.entities
-      .orderBy('created_at', 'desc')
-      .limit(500)
-  );
+  z.preload(queries.recentEntities(500));
   
   return (
     <BrowserRouter>
@@ -48,7 +46,8 @@ function AppContent() {
         <Route path="/counter" element={<CounterPage />} />
         <Route path="/entities" element={<EntitiesList />} />
         <Route path="/investors" element={<EntitiesList initialCategory="investor" />} />
-        <Route path="/assets" element={<EntitiesList initialCategory="asset" />} />
+        <Route path="/assets" element={<AssetsTablePage />} />
+        <Route path="/superinvestors" element={<SuperinvestorsTablePage />} />
         <Route path="/entities/:id" element={<EntityDetail />} />
         <Route path="/:category/:code" element={<CikDetail />} />
         <Route path="/profile" element={<UserProfile />} />
@@ -60,29 +59,16 @@ function AppContent() {
 function HomePage() {
   const z = useZero<Schema>();
   
-  const [users] = useQuery(z.query.user);
-  const [mediums] = useQuery(z.query.medium);
+  const [users] = useQuery(queries.listUsers());
+  const [mediums] = useQuery(queries.listMediums());
 
   const [filterUser, setFilterUser] = useState("");
   const [filterText, setFilterText] = useState("");
 
-  const all = z.query.message;
-  const [allMessages] = useQuery(all);
-
-  let filtered = all
-    .related("medium")
-    .related("sender")
-    .orderBy("timestamp", "desc");
-
-  if (filterUser) {
-    filtered = filtered.where("senderID", filterUser);
-  }
-
-  if (filterText) {
-    filtered = filtered.where("body", "LIKE", `%${escapeLike(filterText)}%`);
-  }
-
-  const [filteredMessages] = useQuery(filtered);
+  const [allMessages] = useQuery(queries.messagesFeed(null, ""));
+  const [filteredMessages] = useQuery(
+    queries.messagesFeed(filterUser || null, filterText)
+  );
 
   const hasFilters = filterUser || filterText;
 

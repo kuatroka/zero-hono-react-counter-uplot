@@ -6,58 +6,102 @@
 
 **This is a local-first application using Zero-sync.**
 
-All database queries MUST use Zero's query builder, NOT custom REST API endpoints.
+All database queries MUST use Zero's **Synced Queries API**, NOT custom REST API endpoints or direct ZQL queries.
+
+**📚 Reference:** https://zero.rocicorp.dev/docs/synced-queries
 
 ---
 
 ## ✅ CORRECT Patterns
 
-### Reading Data
-```typescript
-import { useZero, useQuery } from "@rocicorp/zero/react";
-import { Schema } from "./schema";
+### Step 1: Define Synced Queries
 
-function MyComponent() {
-  const z = useZero<Schema>();
+Create queries in `src/zero/queries.ts`:
+
+```typescript
+import { escapeLike, syncedQuery } from "@rocicorp/zero";
+import { z } from "zod";
+import { builder } from "../schema";
+
+export const queries = {
+  // Simple query - list all entities
+  listEntities: syncedQuery(
+    "entities.list",
+    z.tuple([]),
+    () => builder.entities.orderBy('name', 'asc')
+  ),
   
-  // Simple query
-  const [entities] = useQuery(z.query.entities);
-  
-  // Filtered query
-  const [investors] = useQuery(
-    z.query.entities.where('category', '=', 'investor')
-  );
+  // Filtered query - by category
+  entitiesByCategory: syncedQuery(
+    "entities.byCategory",
+    z.tuple([z.enum(["investor", "asset"])]),
+    (category) => builder.entities.where('category', '=', category)
+  ),
   
   // Sorted and limited
-  const [recent] = useQuery(
-    z.query.entities
-      .orderBy('created_at', 'desc')
-      .limit(50)
-  );
+  recentEntities: syncedQuery(
+    "entities.recent",
+    z.tuple([z.number().int().positive().max(500)]),
+    (limit) => builder.entities.orderBy('created_at', 'desc').limit(limit)
+  ),
+} as const;
+```
+
+### Step 2: Use in Components
+
+```typescript
+import { useQuery } from "@rocicorp/zero/react";
+import { queries } from "../zero/queries";
+
+function MyComponent() {
+  // Simple query
+  const [entities] = useQuery(queries.listEntities());
+  
+  // Filtered query
+  const [investors] = useQuery(queries.entitiesByCategory('investor'));
+  
+  // Sorted and limited
+  const [recent] = useQuery(queries.recentEntities(50));
 }
 ```
 
 ### Search Functionality
+
+**Define the query:**
 ```typescript
+// In src/zero/queries.ts
+searchEntities: syncedQuery(
+  "entities.search",
+  z.tuple([z.string(), z.number().int().min(0).max(50)]),
+  (rawSearch, limit) => {
+    const search = rawSearch.trim();
+    if (!search) {
+      return builder.entities.limit(0);
+    }
+    return builder.entities
+      .where('name', 'ILIKE', `%${escapeLike(search)}%`)
+      .limit(limit);
+  }
+),
+```
+
+**Use in component:**
+```typescript
+import { useQuery } from "@rocicorp/zero/react";
+import { queries } from "../zero/queries";
+
 function GlobalSearch() {
-  const z = useZero<Schema>();
   const [query, setQuery] = useState('');
-  
-  // Case-insensitive search
-  const [results] = useQuery(
-    query.length >= 2
-      ? z.query.entities
-          .where('name', 'ILIKE', `%${query}%`)
-          .limit(5)
-      : z.query.entities.limit(0)
-  );
+  const [results] = useQuery(queries.searchEntities(query, 5));
   
   return (
-    <input 
-      value={query}
-      onChange={(e) => setQuery(e.target.value)}
-    />
-    {results.map(r => <div key={r.id}>{r.name}</div>)}
+    <>
+      <input 
+        value={query}
+        onChange={(e) => setQuery(e.target.value)}
+      />
+      {results.map(r => <div key={r.id}>{r.name}</div>)}
+    </>
   );
 }
 ```
@@ -65,44 +109,78 @@ function GlobalSearch() {
 ### Preloading for Instant Queries
 ```typescript
 // In main.tsx or app initialization
+import { getZero } from './zero-client';
+import { queries } from './zero/queries';
+
 function App() {
-  const z = useZero<Schema>();
+  const z = getZero();
   
   useEffect(() => {
     // Preload 500 most recent entities
-    z.preload(
-      z.query.entities
-        .orderBy('created_at', 'desc')
-        .limit(500)
-    );
-  }, [z]);
+    z.preload(queries.recentEntities(500));
+  }, []);
   
   return <Router />;
 }
 ```
 
 ### Multiple Conditions
+
+**Define the query:**
 ```typescript
-const [filtered] = useQuery(
-  z.query.entities
-    .where('category', '=', 'investor')
-    .where('value', '>', 1000000)
-    .orderBy('value', 'desc')
+// In src/zero/queries.ts
+highValueInvestors: syncedQuery(
+  "entities.highValueInvestors",
+  z.tuple([z.number().int()]),
+  (minValue) =>
+    builder.entities
+      .where('category', '=', 'investor')
+      .where('value', '>', minValue)
+      .orderBy('value', 'desc')
 );
 ```
 
 ### Relationships
+
+**Define the query:**
 ```typescript
-const [messages] = useQuery(
-  z.query.messages
-    .related('sender')
-    .where('sender.isPartner', '=', true)
-);
+// In src/zero/queries.ts
+messagesWithPartners: syncedQuery(
+  "messages.withPartners",
+  z.tuple([]),
+  () =>
+    builder.messages
+      .related('sender')
+      .where('sender.isPartner', '=', true)
+),
+```
+
+**Use in component:**
+```typescript
+const [messages] = useQuery(queries.messagesWithPartners());
 ```
 
 ---
 
 ## ❌ WRONG Patterns (DO NOT USE)
+
+### ❌ Direct ZQL Queries (Deprecated)
+```typescript
+// ❌ WRONG - Direct ZQL query (deprecated)
+const z = useZero<Schema>();
+const [entities] = useQuery(
+  z.query.entities.where('name', 'ILIKE', `%${search}%`)
+);
+```
+
+**Why wrong:**
+- No server-side permission enforcement
+- No parameter validation
+- Can't control query implementation from server
+- Deprecated in favor of synced queries
+- Security risk: clients can query any data
+
+**✅ Solution:** Define a synced query in `src/zero/queries.ts`
 
 ### ❌ Custom Search API Endpoint
 ```typescript
@@ -211,10 +289,10 @@ app.post("/api/reports/generate", async (c) => {
 Need to implement a feature?
 │
 ├─ Is it reading/querying database data?
-│  └─ ✅ Use Zero query (z.query.table.where(...))
+│  └─ ✅ Define synced query in src/zero/queries.ts
 │
 ├─ Is it search/filter/sort?
-│  └─ ✅ Use Zero query with ILIKE
+│  └─ ✅ Define synced query with ILIKE
 │
 ├─ Is it authentication/authorization?
 │  └─ ✅ Use Hono API endpoint
@@ -303,25 +381,31 @@ z.preload(query)  // Cache query results for instant access
 
 ## 🚨 Common Mistakes We Made
 
-### Mistake 1: Created /api/search endpoint
-**Problem:** Bypassed Zero-sync for search  
-**Solution:** Removed endpoint, used `z.query.entities.where('name', 'ILIKE', ...)`
+### Mistake 1: Used direct ZQL queries
+**Problem:** No server-side permission enforcement, security risk  
+**Solution:** Migrated to synced queries defined in `src/zero/queries.ts`
 
-### Mistake 2: Added PostgreSQL full-text search
+### Mistake 2: Created /api/search endpoint
+**Problem:** Bypassed Zero-sync for search  
+**Solution:** Removed endpoint, defined synced query with ILIKE
+
+### Mistake 3: Added PostgreSQL full-text search
 **Problem:** Zero doesn't use pg_trgm or GIN indexes  
 **Solution:** Removed extensions, used simple B-tree indexes
 
-### Mistake 3: Used TanStack Query for data fetching
+### Mistake 4: Used TanStack Query for data fetching
 **Problem:** Unnecessary dependency, Zero has built-in reactivity  
-**Solution:** Removed TanStack Query, used Zero's useQuery
+**Solution:** Removed TanStack Query, used Zero's useQuery with synced queries
 
 ---
 
 ## 💡 Key Takeaway
 
-**If it's in the database and needs to sync, use Zero queries.**
+**If it's in the database and needs to sync, use synced queries.**
 
 **If it's auth, external, files, or heavy compute, use Hono API.**
+
+**📚 Reference:** https://zero.rocicorp.dev/docs/synced-queries
 
 That's it!
 

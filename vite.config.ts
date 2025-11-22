@@ -1,5 +1,6 @@
 import { defineConfig } from "vite";
 import dotenv from "dotenv";
+import path from "path";
 
 if (process.env.NODE_ENV === "development") {
   dotenv.config();
@@ -16,6 +17,11 @@ export default defineConfig({
   optimizeDeps: {
     esbuildOptions: {
       target: "es2022",
+    },
+  },
+  resolve: {
+    alias: {
+      "@": path.resolve(__dirname, "./src"),
     },
   },
   plugins: [

@@ -95,6 +95,24 @@ const searches = table("searches")
   })
   .primaryKey("id");
 
+const asset = table("assets")
+  .columns({
+    id: number(),
+    asset: string(),
+    assetName: string().from("asset_name"),
+  })
+  .primaryKey("id");
+
+const superinvestor = table("superinvestors")
+  .columns({
+    id: number(),
+    cik: string(),
+    cikName: string().from("cik_name"),
+    cikTicker: string().from("cik_ticker"),
+    activePeriods: string().from("active_periods"),
+  })
+  .primaryKey("id");
+
 const messageRelationships = relationships(message, ({ one }) => ({
   sender: one({
     sourceField: ["senderID"],
@@ -109,7 +127,7 @@ const messageRelationships = relationships(message, ({ one }) => ({
 }));
 
 export const schema = createSchema({
-  tables: [user, medium, message, counter, valueQuarter, cikDirectory, entity, userCounter, searches],
+  tables: [user, medium, message, counter, valueQuarter, cikDirectory, entity, userCounter, searches, asset, superinvestor],
   relationships: [messageRelationships],
 });
 
@@ -125,6 +143,8 @@ export type CikDirectory = Row<typeof schema.tables.cik_directory>;
 export type Entity = Row<typeof schema.tables.entities>;
 export type UserCounter = Row<typeof schema.tables.user_counters>;
 export type Search = Row<typeof schema.tables.searches>;
+export type Asset = Row<typeof schema.tables.assets>;
+export type Superinvestor = Row<typeof schema.tables.superinvestors>;
 
 // The contents of your decoded JWT.
 type AuthData = {
@@ -204,6 +224,16 @@ export const permissions = definePermissions<AuthData, Schema>(schema, () => {
       },
     },
     searches: {
+      row: {
+        select: ANYONE_CAN,
+      },
+    },
+    assets: {
+      row: {
+        select: ANYONE_CAN,
+      },
+    },
+    superinvestors: {
       row: {
         select: ANYONE_CAN,
       },

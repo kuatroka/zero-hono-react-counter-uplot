@@ -404,13 +404,118 @@ Only add complexity with:
 
 ## Zero-Sync Architecture Patterns (CRITICAL)
 
-**This is a local-first application using Zero-sync.** Data queries MUST use Zero's query builder, NOT custom REST API endpoints.
+**This is a local-first application using Zero-sync.** Data queries MUST use Zero's **Synced Queries API**, NOT custom REST API endpoints or direct ZQL queries.
 
-### ✅ CORRECT: Use Zero Queries for Data Access
+**📚 Reference:** https://zero.rocicorp.dev/docs/synced-queries
 
-**Reading data:**
+### ✅ CORRECT: Use Synced Queries for Data Access
+
+**Step 1: Define synced queries in `src/zero/queries.ts`:**
 ```typescript
-// ✅ CORRECT - Use Zero query builder
+import { escapeLike, syncedQuery } from "@rocicorp/zero";
+import { z } from "zod";
+import { builder } from "../schema";
+
+export const queries = {
+  // Simple query with no parameters
+  listUsers: syncedQuery("users.list", z.tuple([]), () =>
+    builder.user.orderBy("name", "asc")
+  ),
+  
+  // Query with parameters and validation
+  searchEntities: syncedQuery(
+    "entities.search",
+    z.tuple([z.string(), z.number().int().min(0).max(50)]),
+    (rawSearch, limit) => {
+      const search = rawSearch.trim();
+      if (!search) {
+        return builder.entities.limit(limit);
+      }
+      return builder.entities
+        .where("name", "ILIKE", `%${escapeLike(search)}%`)
+        .limit(limit);
+    }
+  ),
+  
+  // Query with single parameter
+  entityById: syncedQuery(
+    "entities.byId",
+    z.tuple([z.string().min(1)]),
+    (entityId) => builder.entities.where("id", "=", entityId).limit(1)
+  ),
+} as const;
+```
+
+**Step 2: Implement server endpoint in `api/routes/zero/get-queries.ts`:**
+```typescript
+import { Hono } from "hono";
+import { withValidation } from "@rocicorp/zero";
+import { handleGetQueriesRequest } from "@rocicorp/zero/server";
+import { queries } from "../../../src/zero/queries";
+import { schema } from "../../../src/schema";
+
+const validatedQueries = new Map(
+  Object.values(queries).map((query) => [query.queryName, withValidation(query)])
+);
+
+const zeroRoutes = new Hono();
+
+zeroRoutes.post("/get-queries", async (c) => {
+  const response = await handleGetQueriesRequest(
+    (name, args) => {
+      const query = validatedQueries.get(name);
+      if (!query) {
+        throw new Error(`Query not found: ${name}`);
+      }
+      return { query: query(undefined, ...args) };
+    },
+    schema,
+    c.req.raw
+  );
+  return c.json(response);
+});
+
+export default zeroRoutes;
+```
+
+**Step 3: Use in React components:**
+```typescript
+// ✅ CORRECT - Use synced queries
+import { useQuery } from '@rocicorp/zero/react';
+import { queries } from '../zero/queries';
+
+function MyComponent() {
+  const [entities] = useQuery(queries.searchEntities(search, 10));
+  const [user] = useQuery(queries.entityById(userId));
+  
+  // ...
+}
+```
+
+**Why this is correct:**
+- Server controls query implementation (security & permissions)
+- Data synced to local IndexedDB automatically
+- Queries execute instantly against local cache
+- Zero handles server sync in background
+- No network latency for cached data
+- Reactive updates when data changes
+- Parameter validation with Zod schemas
+
+**Preloading for instant search:**
+```typescript
+// ✅ CORRECT - Preload using synced queries
+import { getZero } from '../zero-client';
+import { queries } from '../zero/queries';
+
+const z = getZero();
+z.preload(queries.recentEntities(500));
+```
+
+### ❌ WRONG: Direct ZQL Queries (Deprecated)
+
+**DO NOT use direct ZQL queries (legacy pattern):**
+```typescript
+// ❌ WRONG - Direct ZQL query (deprecated)
 const z = useZero<Schema>();
 const [entities] = useQuery(
   z.query.entities
@@ -419,32 +524,14 @@ const [entities] = useQuery(
 );
 ```
 
-**Why this is correct:**
-- Data synced to local IndexedDB automatically
-- Queries execute instantly against local cache
-- Zero handles server sync in background
-- No network latency for cached data
-- Reactive updates when data changes
+**Why this is wrong:**
+- No server-side permission enforcement
+- No parameter validation
+- Can't control query implementation from server
+- Deprecated in favor of synced queries
+- Security risk: clients can query any data
 
-**Search functionality:**
-```typescript
-// ✅ CORRECT - Client-side search with Zero
-const [results] = useQuery(
-  z.query.entities
-    .where('name', 'ILIKE', `%${searchQuery}%`)
-    .limit(5)
-);
-```
-
-**Preloading for instant search:**
-```typescript
-// ✅ CORRECT - Preload frequently accessed data
-z.preload(
-  z.query.entities
-    .orderBy('created_at', 'desc')
-    .limit(500)
-);
-```
+**✅ Solution:** Define a synced query in `src/zero/queries.ts` and use it instead.
 
 ### ❌ WRONG: Custom REST API Endpoints
 
@@ -467,6 +554,8 @@ const results = await fetch(`/api/search?q=${query}`).then(r => r.json());
 - No reactive updates
 - Defeats the purpose of local-first architecture
 - Data won't sync to other clients properly
+
+**✅ Solution:** Use synced queries instead.
 
 ### When to Use Hono API Endpoints
 
@@ -511,21 +600,28 @@ app.post("/api/reports/generate", async (c) => {
 
 ### Common Mistakes to Avoid
 
-**❌ Mistake 1: Creating /api/search endpoint**
+**❌ Mistake 1: Using direct ZQL queries**
+```typescript
+// ❌ WRONG - Direct ZQL (deprecated)
+const [data] = useQuery(z.query.entities.where('name', 'ILIKE', `%${search}%`));
+```
+**✅ Solution:** Define and use synced queries from `src/zero/queries.ts`
+
+**❌ Mistake 2: Creating /api/search endpoint**
 ```typescript
 // ❌ WRONG
 app.get("/api/search", async (c) => { /* ... */ });
 ```
-**✅ Solution:** Use Zero queries with ILIKE
+**✅ Solution:** Use synced queries with ILIKE
 
-**❌ Mistake 2: Creating /api/entities endpoint**
+**❌ Mistake 3: Creating /api/entities endpoint**
 ```typescript
 // ❌ WRONG
 app.get("/api/entities", async (c) => { /* ... */ });
 ```
-**✅ Solution:** Use Zero queries with .where() and .limit()
+**✅ Solution:** Use synced queries with .where() and .limit()
 
-**❌ Mistake 3: Adding PostgreSQL full-text search**
+**❌ Mistake 4: Adding PostgreSQL full-text search**
 ```sql
 -- ❌ WRONG - Zero doesn't use these
 CREATE EXTENSION pg_trgm;
@@ -533,60 +629,91 @@ CREATE INDEX idx_entities_search_trgm ON entities USING GIN (...);
 ```
 **✅ Solution:** Use simple B-tree indexes, Zero handles queries
 
-**❌ Mistake 4: Using fetch() for data queries**
+**❌ Mistake 5: Using fetch() for data queries**
 ```typescript
 // ❌ WRONG
 const data = await fetch('/api/entities').then(r => r.json());
 ```
-**✅ Solution:** Use useQuery(z.query.entities)
+**✅ Solution:** Use synced queries with useQuery(queries.listEntities())
 
-### Zero Query Patterns
+### Synced Query Patterns
 
-**Filtering:**
+**Define queries in `src/zero/queries.ts` using these patterns:**
+
+**Simple filtering:**
 ```typescript
 // Case-insensitive search
-z.query.entities.where('name', 'ILIKE', `%${search}%`)
+searchEntities: syncedQuery(
+  "entities.search",
+  z.tuple([z.string(), z.number().int().max(50)]),
+  (search, limit) => 
+    builder.entities
+      .where('name', 'ILIKE', `%${escapeLike(search)}%`)
+      .limit(limit)
+),
 
 // Exact match
-z.query.entities.where('category', '=', 'investor')
+entityByCategory: syncedQuery(
+  "entities.byCategory",
+  z.tuple([z.enum(["investor", "asset"])]),
+  (category) => builder.entities.where('category', '=', category)
+),
 
 // Multiple conditions
-z.query.entities
-  .where('category', '=', 'investor')
-  .where('value', '>', 1000000)
+highValueInvestors: syncedQuery(
+  "entities.highValueInvestors",
+  z.tuple([z.number().int()]),
+  (minValue) =>
+    builder.entities
+      .where('category', '=', 'investor')
+      .where('value', '>', minValue)
+),
 ```
 
-**Sorting and limiting:**
+**Sorting and pagination:**
 ```typescript
-z.query.entities
-  .orderBy('created_at', 'desc')
-  .limit(50)
-  .offset(page * 50)
+entitiesPaginated: syncedQuery(
+  "entities.paginated",
+  z.tuple([z.number().int().min(0), z.number().int().max(100)]),
+  (page, pageSize) =>
+    builder.entities
+      .orderBy('created_at', 'desc')
+      .limit(pageSize)
+      .offset(page * pageSize)
+),
 ```
 
 **Relationships:**
 ```typescript
-z.query.messages
-  .related('sender')
-  .where('sender.isPartner', '=', true)
+messagesWithSender: syncedQuery(
+  "messages.withSender",
+  z.tuple([z.boolean()]),
+  (partnersOnly) => {
+    let query = builder.messages.related('sender');
+    if (partnersOnly) {
+      query = query.where('sender.isPartner', '=', true);
+    }
+    return query;
+  }
+),
 ```
 
 **Preloading:**
 ```typescript
 // Preload on app startup for instant queries
-z.preload(
-  z.query.entities
-    .orderBy('created_at', 'desc')
-    .limit(500)
-);
+import { getZero } from '../zero-client';
+import { queries } from '../zero/queries';
+
+const z = getZero();
+z.preload(queries.recentEntities(500));
 ```
 
-### Decision Tree: Zero Query vs API Endpoint
+### Decision Tree: Synced Query vs API Endpoint
 
 ```
 Need to access data?
-├─ Is it database data that syncs? → Use Zero query
-├─ Is it search/filter/sort? → Use Zero query
+├─ Is it database data that syncs? → Use synced query
+├─ Is it search/filter/sort? → Use synced query
 ├─ Is it authentication? → Use API endpoint
 ├─ Is it external service? → Use API endpoint
 ├─ Is it file upload/download? → Use API endpoint
@@ -595,11 +722,637 @@ Need to access data?
 
 ### Reference Implementation
 
-See `src/components/GlobalSearch.tsx` for correct Zero-based search implementation:
-- Uses `z.query.entities.where('name', 'ILIKE', ...)`
-- No custom API endpoint
-- Instant client-side queries
+See `src/zero/queries.ts` for correct synced query implementations:
+- All queries defined with `syncedQuery()`
+- Parameter validation with Zod schemas
+- Server-side query control via `/api/zero/get-queries`
+- Instant client-side queries with local cache
 - Preloaded data for best performance
+
+## React Performance Guidelines (CRITICAL)
+
+**This project uses React 19.2 with Zero-sync local-first architecture, TanStack Table, and uPlot charts.** Follow these guidelines for optimal performance.
+
+### Tier 1: Highest Impact (Implement First)
+
+#### 1. Enable React Compiler (Forget)
+**Impact:** 10-15% faster initial loads, 2.5× faster interactions
+
+```typescript
+// vite.config.ts
+import { defineConfig } from 'vite';
+import react from '@vitejs/plugin-react';
+
+export default defineConfig({
+  plugins: [
+    react({
+      babel: {
+        plugins: [['babel-plugin-react-compiler', {}]]
+      }
+    })
+  ]
+});
+```
+
+**Install:**
+```bash
+bun add -D babel-plugin-react-compiler
+```
+
+**What it does:**
+- Automatically inserts memoization where beneficial
+- Reduces need for manual `React.memo`, `useMemo`, `useCallback`
+- Based on static analysis of component dependencies
+
+#### 2. Zero Snapshots for Fast Cold Starts
+**Impact:** 10-50× faster cold start times
+
+```typescript
+// src/zero-client.ts
+async function initZero() {
+  const snapshot = await snapshotStore.getLatest();
+  if (snapshot) {
+    await z.loadSnapshot(snapshot);
+  }
+  
+  // Create snapshots periodically (every 200-1000 changes)
+  setInterval(async () => {
+    const snapshot = await z.createSnapshot();
+    await snapshotStore.save(snapshot);
+  }, SNAPSHOT_INTERVAL_MS);
+}
+```
+
+**Why this matters:**
+- Loading full CRDT history replays thousands of operations
+- Snapshots + incremental deltas are dramatically faster
+- Critical for apps with 500+ preloaded entities
+
+#### 3. Zero Query Optimization with TTL
+**Impact:** Reduces subscription churn, memory usage, server load
+
+```typescript
+// ✅ CORRECT - Ephemeral queries (search, typeahead)
+const [results] = useQuery(
+  query.length >= 2
+    ? z.query.entities.where('name', 'ILIKE', `%${query}%`).limit(5)
+    : z.query.entities.limit(0),
+  { ttl: 'none' } // ⭐ Unregister immediately when query changes
+);
+
+// ✅ CORRECT - Long-lived queries (main data views)
+const [entities] = useQuery(
+  z.query.entities.orderBy('created_at', 'desc').limit(100)
+  // Default TTL is fine for persistent views
+);
+```
+
+**Why `ttl:'none'` matters:**
+- Each `useQuery` creates a live subscription with server-side work
+- Without TTL control, subscriptions linger in background
+- Search creates new subscription per keystroke = subscription churn
+- `ttl:'none'` destroys subscription immediately on unmount
+
+**When to use:**
+- ✅ Search/typeahead inputs
+- ✅ Temporary modal/dialog queries
+- ✅ Per-keystroke filtered views
+- ❌ Main list views (use default TTL)
+- ❌ Detail pages (use default TTL)
+
+#### 4. Route-Based Code Splitting
+**Impact:** 30-40% smaller initial bundle
+
+```typescript
+// src/App.tsx
+import { lazy, Suspense } from 'react';
+import { createBrowserRouter } from 'react-router-dom';
+
+// ✅ CORRECT - Lazy load route components
+const EntitiesList = lazy(() => import('./pages/EntitiesList'));
+const EntityDetail = lazy(() => import('./pages/EntityDetail'));
+const CikDetail = lazy(() => import('./pages/CikDetail'));
+const UserProfile = lazy(() => import('./pages/UserProfile'));
+
+const router = createBrowserRouter([
+  {
+    path: '/entities',
+    element: (
+      <Suspense fallback={<LoadingSpinner />}>
+        <EntitiesList />
+      </Suspense>
+    )
+  },
+  // ... other routes
+]);
+```
+
+**What to split:**
+- ✅ Each page/route
+- ✅ Heavy chart components (uPlot)
+- ✅ Large tables (TanStack Table)
+- ❌ Small shared components
+- ❌ Layout components
+
+#### 5. Batch Zero Operations
+**Impact:** 50-70% fewer CRDT operations, reduced metadata growth
+
+```typescript
+// ❌ WRONG - Creates separate operation per change
+entities.forEach(entity => {
+  z.mutate.entities.update({ id: entity.id, status: 'processed' });
+});
+
+// ✅ CORRECT - Batch in single transaction
+z.transact(() => {
+  entities.forEach(entity => {
+    z.mutate.entities.update({ id: entity.id, status: 'processed' });
+  });
+});
+```
+
+**Why this matters:**
+- Each operation creates CRDT metadata (vector clocks, timestamps)
+- Batching reduces IndexedDB writes
+- Reduces sync messages to server
+- Prevents metadata bloat
+
+### Tier 2: High Impact (Implement Soon)
+
+#### 6. Use React Scan to Find Wasted Renders
+**Impact:** Identifies actual performance bottlenecks
+
+```bash
+# Install as dev dependency
+bun add -D react-scan
+
+# Or use browser extension
+# https://react-scan.com
+```
+
+```typescript
+// src/main.tsx (development only)
+if (import.meta.env.DEV) {
+  import('react-scan').then(({ scan }) => {
+    scan({
+      enabled: true,
+      log: true
+    });
+  });
+}
+```
+
+**What it shows:**
+- Visual overlays on components that re-render
+- Render counts and timing
+- "Why did this render?" analysis
+- Perfect for identifying wasted renders in tables/charts
+
+#### 7. Virtualize Large Lists
+**Impact:** Handle 10,000+ rows smoothly
+
+```typescript
+// src/pages/EntitiesList.tsx
+import { useVirtualizer } from '@tanstack/react-virtual';
+
+function EntitiesList() {
+  const [entities] = useQuery(z.query.entities.limit(10000));
+  const parentRef = useRef<HTMLDivElement>(null);
+  
+  const virtualizer = useVirtualizer({
+    count: entities.length,
+    getScrollElement: () => parentRef.current,
+    estimateSize: () => 50, // Row height in pixels
+    overscan: 5
+  });
+  
+  return (
+    <div ref={parentRef} style={{ height: '600px', overflow: 'auto' }}>
+      <div style={{ height: `${virtualizer.getTotalSize()}px` }}>
+        {virtualizer.getVirtualItems().map(virtualRow => (
+          <div
+            key={entities[virtualRow.index].id}
+            style={{
+              position: 'absolute',
+              top: 0,
+              left: 0,
+              width: '100%',
+              height: `${virtualRow.size}px`,
+              transform: `translateY(${virtualRow.start}px)`
+            }}
+          >
+            <EntityRow entity={entities[virtualRow.index]} />
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+```
+
+**Install:**
+```bash
+bun add @tanstack/react-virtual
+```
+
+**When to virtualize:**
+- ✅ Lists with 100+ items
+- ✅ Tables with many rows
+- ✅ Infinite scroll views
+- ❌ Small lists (<50 items)
+- ❌ Grids with few columns
+
+#### 8. Selective Preloading by Route
+**Impact:** Reduces initial memory footprint, faster app start
+
+```typescript
+// src/App.tsx
+import { useEffect } from 'react';
+import { useLocation } from 'react-router-dom';
+
+function useRoutePreload() {
+  const location = useLocation();
+  const z = useZero<Schema>();
+  
+  useEffect(() => {
+    switch (location.pathname) {
+      case '/entities':
+        // Only preload what this route needs
+        z.preload(z.query.entities.limit(100));
+        break;
+      case '/entity/:id':
+        // Preload single entity + related data
+        const id = location.pathname.split('/')[2];
+        z.preload(z.query.entities.where('id', '=', id));
+        break;
+      default:
+        // Minimal preload for other routes
+        z.preload(z.query.entities.limit(10));
+    }
+  }, [location.pathname, z]);
+}
+```
+
+**Current issue:**
+```typescript
+// ❌ WRONG - Preloads 500 entities globally
+z.preload(z.query.entities.limit(500));
+```
+
+**Better approach:**
+- Preload only what each route needs
+- Use smaller limits for initial load
+- Lazy-load additional data on demand
+
+#### 9. Move Heavy Work to Web Workers
+**Impact:** Keeps UI responsive during heavy operations
+
+```typescript
+// src/workers/reconcile.worker.ts
+self.onmessage = async ({ data }) => {
+  const merged = await reconcileCRDT(data.local, data.remote);
+  postMessage(merged);
+};
+
+// src/hooks/useWorkerReconcile.ts
+import ReconcileWorker from './workers/reconcile.worker?worker';
+
+export function useWorkerReconcile() {
+  const workerRef = useRef<Worker>();
+  
+  useEffect(() => {
+    workerRef.current = new ReconcileWorker();
+    return () => workerRef.current?.terminate();
+  }, []);
+  
+  const reconcile = useCallback((local, remote) => {
+    return new Promise((resolve) => {
+      workerRef.current!.onmessage = ({ data }) => resolve(data);
+      workerRef.current!.postMessage({ local, remote });
+    });
+  }, []);
+  
+  return reconcile;
+}
+```
+
+**What to move to workers:**
+- ✅ CRDT reconciliation
+- ✅ Heavy data transformations
+- ✅ Chart data preprocessing
+- ✅ Large JSON parsing
+- ❌ DOM manipulation
+- ❌ React state updates
+
+### Tier 3: Medium Impact (Nice to Have)
+
+#### 10. Strategic Memoization
+**Impact:** Prevents expensive recomputations
+
+**When to use manual memoization (even with React Compiler):**
+
+```typescript
+// ✅ CORRECT - Expensive computations
+const sortedEntities = useMemo(() => {
+  return entities
+    .filter(e => e.name.includes(searchTerm))
+    .sort((a, b) => a.name.localeCompare(b.name));
+}, [entities, searchTerm]);
+
+// ✅ CORRECT - Reference stability for chart options
+const chartOptions = useMemo(() => ({
+  scales: { x: { type: 'time' } },
+  plugins: { legend: { display: true } }
+}), []);
+
+// ✅ CORRECT - Heavy components with stable props
+const MemoizedQuarterChart = React.memo(QuarterChart, (prev, next) => {
+  return prev.data === next.data && prev.theme === next.theme;
+});
+
+// ❌ WRONG - Premature optimization
+const simpleValue = useMemo(() => count * 2, [count]); // Too simple!
+```
+
+**Rule of thumb:**
+1. Enable React Compiler first (handles 80% of cases)
+2. Use React Scan to identify actual problems
+3. Add manual memoization only where React Scan shows issues
+4. Profile before/after to verify improvement
+
+**Don't memoize:**
+- Simple calculations (arithmetic, string concat)
+- JSX with no expensive children
+- Props that change frequently anyway
+
+#### 11. Partial Hydration for Offscreen Content
+**Impact:** Faster Time to Interactive
+
+```typescript
+// src/pages/EntityDetail.tsx
+import { Suspense } from 'react';
+
+function EntityDetail() {
+  return (
+    <div>
+      <EntityHeader /> {/* Hydrate immediately */}
+      
+      <Suspense fallback={<ChartSkeleton />}>
+        <LazyChart /> {/* Hydrate when visible */}
+      </Suspense>
+    </div>
+  );
+}
+
+// Use IntersectionObserver for below-fold content
+function LazyChart() {
+  const [shouldRender, setShouldRender] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  
+  useEffect(() => {
+    const observer = new IntersectionObserver(([entry]) => {
+      if (entry.isIntersecting) {
+        setShouldRender(true);
+        observer.disconnect();
+      }
+    });
+    
+    if (ref.current) observer.observe(ref.current);
+    return () => observer.disconnect();
+  }, []);
+  
+  return (
+    <div ref={ref}>
+      {shouldRender ? <QuarterChart /> : <ChartSkeleton />}
+    </div>
+  );
+}
+```
+
+**When to defer hydration:**
+- ✅ Charts below the fold
+- ✅ Tabs/accordions (hidden content)
+- ✅ Modals/dialogs (not initially visible)
+- ❌ Above-the-fold content
+- ❌ Critical user interactions
+
+#### 12. React 19 Activity API for Hidden Content
+**Impact:** Deprioritizes hidden subtrees
+
+```typescript
+// src/components/TabPanel.tsx
+import { Activity } from 'react';
+
+function TabPanel({ isActive, children }) {
+  return (
+    <Activity mode={isActive ? 'visible' : 'hidden'}>
+      <Suspense fallback={<Skeleton />}>
+        {children}
+      </Suspense>
+    </Activity>
+  );
+}
+```
+
+**Use cases:**
+- Tab panels (preserve state but lower priority)
+- Sidebar content
+- Collapsed sections
+- Background panels
+
+#### 13. Optimize Chart Rendering
+**Impact:** Smooth real-time updates
+
+```typescript
+// src/components/QuarterChart.tsx
+import { useMemo, useRef, useEffect } from 'react';
+
+function QuarterChart({ data }) {
+  const chartRef = useRef<HTMLDivElement>(null);
+  
+  // ✅ Precompute expensive transforms
+  const chartData = useMemo(() => {
+    return data.map(d => ({
+      x: new Date(d.date).getTime(),
+      y: parseFloat(d.value)
+    }));
+  }, [data]);
+  
+  // ✅ Batch updates with requestAnimationFrame
+  useEffect(() => {
+    let rafId: number;
+    
+    const updateChart = () => {
+      if (chartRef.current) {
+        // Update chart with new data
+        chart.setData(chartData);
+      }
+    };
+    
+    rafId = requestAnimationFrame(updateChart);
+    return () => cancelAnimationFrame(rafId);
+  }, [chartData]);
+  
+  return <div ref={chartRef} />;
+}
+
+// ✅ Lazy-load chart library
+const QuarterChart = lazy(() => import('./QuarterChart'));
+```
+
+**Chart optimization checklist:**
+- ✅ Lazy-load chart library (uPlot is 40KB+)
+- ✅ Precompute data transformations
+- ✅ Use `requestAnimationFrame` for updates
+- ✅ Debounce real-time data with `useDeferredValue`
+- ✅ Memoize chart options object
+
+#### 14. Metadata Garbage Collection
+**Impact:** Prevents long-term memory bloat
+
+```typescript
+// src/zero-client.ts
+async function setupMetadataGC() {
+  // Run garbage collection periodically
+  setInterval(async () => {
+    await z.compactMetadata({
+      pruneOlderThan: 30 * 24 * 60 * 60 * 1000, // 30 days
+      keepTombstones: 1000 // Keep recent deletes
+    });
+  }, 24 * 60 * 60 * 1000); // Daily
+}
+```
+
+**Why this matters:**
+- CRDT metadata grows unbounded without GC
+- Tombstones (deleted items) accumulate
+- Affects memory usage and sync performance
+- Critical for long-lived sessions
+
+### Performance Measurement
+
+#### Before Optimizing
+```bash
+# Install tools
+bun add -D rollup-plugin-visualizer
+
+# Analyze bundle
+bun run build
+# Check dist/stats.html for bundle composition
+```
+
+#### Metrics to Track
+- **Initial bundle size** (target: <200KB gzipped)
+- **Time to Interactive** (target: <3s on 3G)
+- **First Contentful Paint** (target: <1.5s)
+- **Active Zero subscriptions** (target: <50 concurrent)
+- **Memory usage** (target: <100MB for typical session)
+
+#### React DevTools Profiler
+```typescript
+// Wrap expensive components
+<Profiler id="EntitiesList" onRender={onRenderCallback}>
+  <EntitiesList />
+</Profiler>
+
+function onRenderCallback(
+  id, phase, actualDuration, baseDuration, startTime, commitTime
+) {
+  console.log(`${id} took ${actualDuration}ms to render`);
+}
+```
+
+### Common Anti-Patterns to Avoid
+
+#### ❌ Creating New Objects in Render
+```typescript
+// ❌ WRONG - New object every render
+<Chart options={{ scales: { x: { type: 'time' } } }} />
+
+// ✅ CORRECT - Stable reference
+const options = useMemo(() => ({ scales: { x: { type: 'time' } } }), []);
+<Chart options={options} />
+```
+
+#### ❌ Inline Function Props
+```typescript
+// ❌ WRONG - New function every render
+<Button onClick={() => handleClick(id)} />
+
+// ✅ CORRECT - Stable callback
+const onClick = useCallback(() => handleClick(id), [id]);
+<Button onClick={onClick} />
+```
+
+#### ❌ Debouncing Zero Reads (Usually Unnecessary)
+```typescript
+// ⚠️ USUALLY UNNECESSARY - IndexedDB is fast
+const debouncedSearch = debounce(setSearchQuery, 300);
+
+// ✅ BETTER - Use ttl:'none' instead
+const [results] = useQuery(
+  z.query.entities.where('name', 'ILIKE', `%${query}%`),
+  { ttl: 'none' }
+);
+```
+
+**Exception:** Debounce if you have expensive transformations on results:
+```typescript
+// ✅ CORRECT - Debounce expensive computation
+const debouncedQuery = useDeferredValue(query);
+const processedResults = useMemo(() => {
+  return results.map(r => expensiveTransform(r));
+}, [results]);
+```
+
+#### ❌ Too Many Fine-Grained Queries
+```typescript
+// ❌ WRONG - Creates many subscriptions
+entities.map(e => {
+  const [details] = useQuery(z.query.entities.where('id', '=', e.id));
+  return <EntityRow details={details} />;
+});
+
+// ✅ CORRECT - Single query, derive in React
+const [allEntities] = useQuery(z.query.entities.limit(100));
+return allEntities.map(e => <EntityRow entity={e} />);
+```
+
+### Decision Matrix
+
+| Optimization | When to Use | When to Skip |
+|--------------|-------------|--------------|
+| React Compiler | Always | Never (no downside) |
+| Zero Snapshots | >100 entities preloaded | <50 entities |
+| `ttl:'none'` | Search, typeahead, modals | Main views, detail pages |
+| Code Splitting | Routes, heavy components | Small shared components |
+| Virtualization | Lists >100 items | Lists <50 items |
+| Manual Memoization | After React Scan shows issue | Before measuring |
+| Web Workers | Heavy computations (>50ms) | Simple operations |
+| Partial Hydration | Below-fold charts | Above-fold content |
+
+### Quick Wins Checklist
+
+Start here for immediate impact:
+
+- [ ] Enable React Compiler in `vite.config.ts`
+- [ ] Add `ttl:'none'` to search queries
+- [ ] Implement Zero snapshots
+- [ ] Add route-based code splitting
+- [ ] Install React Scan for profiling
+- [ ] Batch Zero mutations in transactions
+- [ ] Virtualize EntitiesList if >100 rows
+- [ ] Lazy-load chart components
+- [ ] Memoize chart options objects
+- [ ] Set up bundle size monitoring
+
+### Resources
+
+- React Compiler: https://react.dev/blog/2025/04/21/react-compiler-rc
+- React Scan: https://react-scan.com
+- Zero Docs: https://zero.rocicorp.dev/docs
+- TanStack Virtual: https://tanstack.com/virtual/latest
+- React 19 Activity API: https://react.dev/reference/react/Activity
 
 ## Tool Selection Guide
 

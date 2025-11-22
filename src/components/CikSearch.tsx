@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery } from '@rocicorp/zero/react';
-import { getZero } from '../zero-client';
+import { queries } from '../zero/queries';
 
 export function CikSearch() {
   const [query, setQuery] = useState('');
@@ -30,36 +30,15 @@ export function CikSearch() {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  const z = getZero();
   const trimmedQuery = query.trim();
-
-  // Search both name and code columns
-  const nameQuery = trimmedQuery
-    ? z.query.searches
-      .where('name', 'ILIKE', `%${trimmedQuery}%`)
-      .limit(10)
-    : z.query.searches.limit(0);
-
-  const codeQuery = trimmedQuery
-    ? z.query.searches
-      .where('code', 'ILIKE', `%${trimmedQuery}%`)
-      .limit(10)
-    : z.query.searches.limit(0);
-
   const queryOpts = query !== debouncedQuery ? undefined : ({ ttl: 'none' } as const);
 
-  const [nameResults] = useQuery(nameQuery, queryOpts);
-  const [codeResults] = useQuery(codeQuery, queryOpts);
+  const [searchResults] = useQuery(
+    queries.searchesByName(trimmedQuery, 10),
+    queryOpts
+  );
 
-  // Merge results and deduplicate by id
-  const allResults = [...(nameResults ?? []), ...(codeResults ?? [])];
-  const uniqueResultsMap = new Map();
-  allResults.forEach(row => {
-    if (!uniqueResultsMap.has(row.id)) {
-      uniqueResultsMap.set(row.id, row);
-    }
-  });
-  const visibleResults = Array.from(uniqueResultsMap.values()).slice(0, 10);
+  const visibleResults = searchResults ?? [];
 
   useEffect(() => {
     setSelectedIndex(-1);
@@ -160,7 +139,7 @@ export function CikSearch() {
         </div>
       )}
 
-      {isOpen && trimmedQuery && nameResults && codeResults && nameResults.length === 0 && codeResults.length === 0 && (
+      {isOpen && trimmedQuery && searchResults && searchResults.length === 0 && (
         <div className="absolute top-full mt-2 w-full bg-white border border-gray-200 rounded-lg shadow-lg z-50 px-4 py-3 text-gray-500 text-sm">
           No results found
         </div>

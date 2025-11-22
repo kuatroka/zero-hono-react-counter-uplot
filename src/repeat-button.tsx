@@ -1,8 +1,10 @@
 import React from "react";
+import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 
 type DownEvent = React.MouseEvent | React.TouchEvent;
 
-interface RepeatButtonProps extends React.ComponentProps<"button"> {
+interface RepeatButtonProps extends React.ComponentProps<typeof Button> {
   /**
    * Return `true` / `void` to continue repeating, `false` to stop
    */
@@ -14,7 +16,7 @@ const HOLD_INTERVAL_MS = 1000 / 60;
 /**
  * A `<button>` that repeats an action when held down
  */
-export function RepeatButton({ onTrigger, ...props }: RepeatButtonProps) {
+export function RepeatButton({ onTrigger, className, ...props }: RepeatButtonProps) {
   const [event, setEvent] = React.useState<DownEvent | null>(null);
 
   const onTriggerRef = React.useRef(onTrigger);
@@ -48,9 +50,10 @@ export function RepeatButton({ onTrigger, ...props }: RepeatButtonProps) {
   }
 
   return (
-    <button
+    <Button
       {...props}
-      className={`btn btn-sm ${props.className || ""}`}
+      size="sm"
+      className={cn(className)}
       onMouseDown={(e) => {
         start(e);
         props.onMouseDown?.(e);

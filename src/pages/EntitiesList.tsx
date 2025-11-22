@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useQuery } from '@rocicorp/zero/react';
-import { zero } from '../zero-client';
+import { queries } from '../zero/queries';
 
 type CategoryFilter = 'all' | 'investor' | 'asset';
 
@@ -13,9 +13,7 @@ export function EntitiesList({ initialCategory = 'all' }: EntitiesListProps) {
   const [categoryFilter, setCategoryFilter] = useState<CategoryFilter>(initialCategory);
 
   const [allEntities] = useQuery(
-    categoryFilter === 'all'
-      ? zero.query.entities.orderBy('name', 'asc')
-      : zero.query.entities.where('category', categoryFilter).orderBy('name', 'asc')
+    queries.entitiesByCategory(categoryFilter, 1000)
   );
 
   const totalCount = allEntities?.length || 0;

@@ -1,4 +1,3 @@
-import { escapeLike } from "@rocicorp/zero";
 import { useQuery, useZero } from "@rocicorp/zero/react";
 import Cookies from "js-cookie";
 import { useState } from "react";
@@ -7,32 +6,20 @@ import { randInt } from "./rand";
 import { RepeatButton } from "./repeat-button";
 import { Schema } from "./schema";
 import { randomMessage } from "./test-data";
+import { queries } from "./zero/queries";
 
 function App() {
   const z = useZero<Schema>();
-  const [users] = useQuery(z.query.user);
-  const [mediums] = useQuery(z.query.medium);
+  const [users] = useQuery(queries.listUsers());
+  const [mediums] = useQuery(queries.listMediums());
 
   const [filterUser, setFilterUser] = useState("");
   const [filterText, setFilterText] = useState("");
 
-  const all = z.query.message;
-  const [allMessages] = useQuery(all);
-
-  let filtered = all
-    .related("medium")
-    .related("sender")
-    .orderBy("timestamp", "desc");
-
-  if (filterUser) {
-    filtered = filtered.where("senderID", filterUser);
-  }
-
-  if (filterText) {
-    filtered = filtered.where("body", "LIKE", `%${escapeLike(filterText)}%`);
-  }
-
-  const [filteredMessages] = useQuery(filtered);
+  const [allMessages] = useQuery(queries.messagesFeed(null, ""));
+  const [filteredMessages] = useQuery(
+    queries.messagesFeed(filterUser || null, filterText)
+  );
 
   const hasFilters = filterUser || filterText;
 

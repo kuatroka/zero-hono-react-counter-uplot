@@ -6,6 +6,8 @@ import { QuarterChart } from "./charts/QuarterChart";
 import { chartMetaList } from "./charts/factory";
 import { ThemeSwitcher } from "./ThemeSwitcher";
 import { Schema } from "../schema";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
 export function CounterPage() {
   const z = useZero<Schema>();
@@ -92,8 +94,8 @@ export function CounterPage() {
 
   if (!counter || quarters.length === 0) {
     return (
-      <div className="min-h-screen bg-base-200 flex items-center justify-center">
-        <span className="loading loading-spinner loading-lg"></span>
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary"></div>
       </div>
     );
   }
@@ -106,82 +108,88 @@ export function CounterPage() {
   const [primaryChart, ...remainingCharts] = chartMetaList;
 
   return (
-    <div className="min-h-screen bg-base-200">
+    <div className="min-h-screen bg-background">
       <div className="container mx-auto px-4 py-8 max-w-7xl">
         <div className="flex flex-col gap-6">
-          <header className="flex justify-between items-start">
+          <header className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
             <div className="space-y-3">
               <Link to="/" className="link link-primary flex items-center gap-2 w-max">
                 <span className="text-xl">←</span> Back to Home
               </Link>
-              <h1 className="text-3xl font-bold">Counter & Quarterly Charts</h1>
+              <h1 className="text-2xl sm:text-3xl font-bold">Counter & Quarterly Charts</h1>
             </div>
             <ThemeSwitcher />
           </header>
 
-          <section className="grid gap-6 md:grid-cols-2">
-            <div className="card bg-base-100 shadow-xl">
-              <div className="card-body items-center">
-                <h2 className="card-title">Global Counter</h2>
-                <p className="text-sm opacity-70 mb-4">Synced across all users</p>
-                <div className="join">
-                  <button onClick={handleDecrement} className="btn btn-square join-item btn-primary text-2xl">
+          <section className="grid gap-6 grid-cols-1 md:grid-cols-2">
+            <Card>
+              <CardContent className="flex flex-col items-center pt-6">
+                <CardTitle className="text-center mb-2">Global Counter</CardTitle>
+                <p className="text-sm text-muted-foreground mb-4 text-center">Synced across all users</p>
+                <div className="flex items-center justify-center gap-0 w-full max-w-xs">
+                  <Button onClick={handleDecrement} size="icon" className="text-2xl h-16 w-16 rounded-r-none flex-shrink-0">
                     −
-                  </button>
-                  <div className="join-item w-32 text-center text-3xl font-semibold bg-base-300 flex items-center justify-center">
+                  </Button>
+                  <div className="w-32 h-16 text-center text-3xl font-semibold bg-muted flex items-center justify-center border-y flex-shrink-0">
                     {counter.value}
                   </div>
-                  <button onClick={handleIncrement} className="btn btn-square join-item btn-primary text-2xl">
+                  <Button onClick={handleIncrement} size="icon" className="text-2xl h-16 w-16 rounded-l-none flex-shrink-0">
                     +
-                  </button>
+                  </Button>
                 </div>
-              </div>
-            </div>
+              </CardContent>
+            </Card>
 
-            <div className="card bg-base-100 shadow-xl">
-              <div className="card-body items-center">
-                <h2 className="card-title">Your Counter</h2>
-                <p className="text-sm opacity-70 mb-4">Private to you only</p>
-                <div className="join">
-                  <button
+            <Card>
+              <CardContent className="flex flex-col items-center pt-6">
+                <CardTitle className="text-center mb-2">Your Counter</CardTitle>
+                <p className="text-sm text-muted-foreground mb-4 text-center">Private to you only</p>
+                <div className="flex items-center justify-center gap-0 w-full max-w-xs">
+                  <Button
                     onClick={handleUserDecrement}
-                    className="btn btn-square join-item btn-secondary text-2xl"
+                    variant="secondary"
+                    size="icon"
+                    className="text-2xl h-16 w-16 rounded-r-none flex-shrink-0"
                   >
                     −
-                  </button>
-                  <div className="join-item w-32 text-center text-3xl font-semibold bg-base-300 flex items-center justify-center">
+                  </Button>
+                  <div className="w-32 h-16 text-center text-3xl font-semibold bg-muted flex items-center justify-center border-y flex-shrink-0">
                     {privateCounterValue}
                   </div>
-                  <button
+                  <Button
                     onClick={handleUserIncrement}
-                    className="btn btn-square join-item btn-secondary text-2xl"
+                    variant="secondary"
+                    size="icon"
+                    className="text-2xl h-16 w-16 rounded-l-none flex-shrink-0"
                   >
                     +
-                  </button>
+                  </Button>
                 </div>
                 {!isLoggedIn ? (
                   <div className="mt-4 text-center text-sm">
-                    <p className="mb-2">
+                    <p className="mb-2 text-muted-foreground">
                       This value stays local and resets when you leave. Sign in to sync it.
                     </p>
-                    <button className="btn btn-sm" onClick={handleLogin}>
+                    <Button size="sm" onClick={handleLogin}>
                       Login
-                    </button>
+                    </Button>
                   </div>
                 ) : (
-                  <p className="mt-4 text-center text-sm opacity-70">
+                  <p className="mt-4 text-center text-sm text-muted-foreground">
                     This value is stored privately for {z.userID}.
                   </p>
                 )}
-              </div>
-            </div>
+              </CardContent>
+            </Card>
           </section>
 
           <section>
-            <div className="card bg-base-100 shadow-xl">
-              <div className="card-body">
-                <h2 className="card-title">{primaryChart.title}</h2>
-                <p className="text-sm opacity-70">{primaryChart.description}</p>
+            <Card>
+              <CardHeader>
+                <CardTitle>{primaryChart.title}</CardTitle>
+                <p className="text-sm text-muted-foreground">{primaryChart.description}</p>
+              </CardHeader>
+              <CardContent>
                 <div className="overflow-hidden">
                   <QuarterChart
                     kind={primaryChart.key}
@@ -190,16 +198,18 @@ export function CounterPage() {
                     values={chartSeries.values}
                   />
                 </div>
-              </div>
-            </div>
+              </CardContent>
+            </Card>
           </section>
 
-          <section className="grid gap-6 sm:grid-cols-2 xl:grid-cols-3">
+          <section className="grid gap-6 grid-cols-1 sm:grid-cols-2 xl:grid-cols-3">
             {remainingCharts.map((meta) => (
-              <div key={meta.key} className="card bg-base-100 shadow-lg">
-                <div className="card-body">
-                  <h3 className="card-title text-base">{meta.title}</h3>
-                  <p className="text-sm opacity-70">{meta.description}</p>
+              <Card key={meta.key}>
+                <CardHeader>
+                  <CardTitle className="text-base">{meta.title}</CardTitle>
+                  <p className="text-sm text-muted-foreground">{meta.description}</p>
+                </CardHeader>
+                <CardContent>
                   <div className="overflow-hidden">
                     <QuarterChart
                       kind={meta.key}
@@ -208,8 +218,8 @@ export function CounterPage() {
                       values={chartSeries.values}
                     />
                   </div>
-                </div>
-              </div>
+                </CardContent>
+              </Card>
             ))}
           </section>
         </div>

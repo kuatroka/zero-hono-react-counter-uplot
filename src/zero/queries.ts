@@ -83,20 +83,6 @@ export const queries = {
     z.tuple([z.string()]),
     (userId) => builder.user_counters.where("userId", "=", userId).limit(1)
   ),
-  searchesByCategory: syncedQuery(
-    "searches.byCategory",
-    z.tuple([
-      z.enum(["all", "superinvestors", "assets", "periods"]),
-      z.number().int().min(0).max(1000),
-    ]),
-    (category, limit) => {
-      const base = builder.searches.orderBy("name", "asc");
-      if (category === "all") {
-        return base.limit(limit);
-      }
-      return base.where("category", "=", category).limit(limit);
-    }
-  ),
   searchesByName: syncedQuery(
     "searches.byName",
     z.tuple([z.string(), z.number().int().min(0).max(100)]),
@@ -106,6 +92,32 @@ export const queries = {
       if (!search) {
         return base.limit(limit);
       }
+      // Treat purely numeric input as a code (e.g. "7195"),
+      // everything else is assumed to be a name fragment.
+      const isCodeLike = /^[0-9]+$/.test(search);
+      if (isCodeLike) {
+        return base
+          .where("code", "ILIKE", `%${escapeLike(search)}%`)
+          .limit(limit);
+      }
+      return base
+        .where("name", "ILIKE", `%${escapeLike(search)}%`)
+        .limit(limit);
+    }
+  ),
+  searchesByCategory: syncedQuery(
+    "searches.byCategory",
+    z.tuple([z.string(), z.string(), z.number().int().min(0).max(1000)]),
+    (category, rawSearch, limit) => {
+      const search = rawSearch.trim();
+      let base = builder.searches
+        .where("category", "=", category)
+        .orderBy("name", "asc");
+      
+      if (!search) {
+        return base.limit(limit);
+      }
+      
       // Treat purely numeric input as a code (e.g. "7195"),
       // everything else is assumed to be a name fragment.
       const isCodeLike = /^[0-9]+$/.test(search);
