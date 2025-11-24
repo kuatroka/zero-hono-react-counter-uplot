@@ -7,7 +7,7 @@
   font-family: inherit;
 }
 
-/* Custom scrollbar for CikSearch dropdown */
+/* Scrollbar styling */
 .scrollbar-visible::-webkit-scrollbar {
   width: 12px;
 }

@@ -92,22 +92,20 @@ export const queries = {
       if (!search) {
         return base.limit(limit);
       }
-      // Treat purely numeric input as a code (e.g. "7195"),
-      // everything else is assumed to be a name fragment.
-      const isCodeLike = /^[0-9]+$/.test(search);
-      if (isCodeLike) {
-        return base
-          .where("code", "ILIKE", `%${escapeLike(search)}%`)
-          .limit(limit);
-      }
+      const pattern = `%${escapeLike(search)}%`;
       return base
-        .where("name", "ILIKE", `%${escapeLike(search)}%`)
+        .where(({ or, cmp }) =>
+          or(
+            cmp("name", "ILIKE", pattern),
+            cmp("code", "ILIKE", pattern)
+          )
+        )
         .limit(limit);
     }
   ),
   searchesByCategory: syncedQuery(
     "searches.byCategory",
-    z.tuple([z.string(), z.string(), z.number().int().min(0).max(1000)]),
+    z.tuple([z.string(), z.string(), z.number().int().min(0).max(50000)]),
     (category, rawSearch, limit) => {
       const search = rawSearch.trim();
       let base = builder.searches
@@ -117,17 +115,14 @@ export const queries = {
       if (!search) {
         return base.limit(limit);
       }
-      
-      // Treat purely numeric input as a code (e.g. "7195"),
-      // everything else is assumed to be a name fragment.
-      const isCodeLike = /^[0-9]+$/.test(search);
-      if (isCodeLike) {
-        return base
-          .where("code", "ILIKE", `%${escapeLike(search)}%`)
-          .limit(limit);
-      }
+      const pattern = `%${escapeLike(search)}%`;
       return base
-        .where("name", "ILIKE", `%${escapeLike(search)}%`)
+        .where(({ or, cmp }) =>
+          or(
+            cmp("name", "ILIKE", pattern),
+            cmp("code", "ILIKE", pattern)
+          )
+        )
         .limit(limit);
     }
   ),
@@ -140,6 +135,36 @@ export const queries = {
     "searches.byCode",
     z.tuple([z.string().min(1)]),
     (code) => builder.searches.where("code", "=", code).limit(1)
+  ),
+
+  assetsPage: syncedQuery(
+    "assets.page",
+    z.tuple([z.number().int().min(1).max(1000), z.number().int().min(0)]),
+    (limit, _offset) =>
+      builder.assets
+        .orderBy("assetName", "asc")
+        .limit(limit)
+  ),
+  assetBySymbol: syncedQuery(
+    "assets.bySymbol",
+    z.tuple([z.string().min(1)]),
+    (symbol) =>
+      builder.assets.where("asset", "=", symbol).limit(1)
+  ),
+
+  superinvestorsPage: syncedQuery(
+    "superinvestors.page",
+    z.tuple([z.number().int().min(1).max(1000), z.number().int().min(0)]),
+    (limit, _offset) =>
+      builder.superinvestors
+        .orderBy("cikName", "asc")
+        .limit(limit)
+  ),
+
+  superinvestorByCik: syncedQuery(
+    "superinvestors.byCik",
+    z.tuple([z.string().min(1)]),
+    (cik) => builder.superinvestors.where("cik", "=", cik).limit(1)
   ),
 } as const;
 

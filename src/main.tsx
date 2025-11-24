@@ -1,55 +1,85 @@
-import { StrictMode } from "react";
+import { StrictMode, useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import "./index.css";
 import "uplot/dist/uPlot.min.css";
 import { ZeroProvider } from "@rocicorp/zero/react";
-import { schema } from "./schema.ts";
+import { schema, Schema } from "./schema";
 import Cookies from "js-cookie";
 import { decodeJwt } from "jose";
 import { BrowserRouter, Routes, Route, Link } from "react-router-dom";
 import { useQuery, useZero } from "@rocicorp/zero/react";
-import { useState } from "react";
 import { formatDate } from "./date";
 import { randInt } from "./rand";
 import { RepeatButton } from "./repeat-button";
-import { Schema } from "./schema";
 import { randomMessage } from "./test-data";
 import { CounterPage } from "./components/CounterPage";
 import { ThemeSwitcher } from "./components/ThemeSwitcher";
 import { GlobalNav } from "./components/GlobalNav";
-import { EntitiesList } from "./pages/EntitiesList";
-import { EntityDetail } from "./pages/EntityDetail";
-import { CikDetail } from "./pages/CikDetail";
 import { UserProfile } from "./pages/UserProfile";
 import { AssetsTablePage } from "./pages/AssetsTable";
 import { SuperinvestorsTablePage } from "./pages/SuperinvestorsTable";
+import { AssetDetailPage } from "./pages/AssetDetail";
+import { SuperinvestorDetailPage } from "./pages/SuperinvestorDetail";
 import { initZero } from "./zero-client";
 import { queries } from "./zero/queries";
 
+// Stable IDs so Zero reuses the same IndexedDB database
+function getStableUserID(): string {
+  const encodedJWT = Cookies.get("jwt");
+  const decodedJWT = encodedJWT && decodeJwt(encodedJWT);
+  if (decodedJWT?.sub) return decodedJWT.sub as string;
+
+  const ANON_USER_KEY = "zero_anon_user_id";
+  let anonID = localStorage.getItem(ANON_USER_KEY);
+  if (!anonID) {
+    anonID = `anon_${crypto.randomUUID()}`;
+    localStorage.setItem(ANON_USER_KEY, anonID);
+  }
+  return anonID;
+}
+
+function getStableStorageKey(): string {
+  const STORAGE_KEY = "zero_storage_key_v2";
+  let storageKey = localStorage.getItem(STORAGE_KEY);
+  if (!storageKey) {
+    storageKey = "main-v2";
+    localStorage.setItem(STORAGE_KEY, storageKey);
+  }
+  return storageKey;
+}
+
+async function requestPersistentStorage() {
+  if (navigator.storage?.persist) {
+    const persisted = await navigator.storage.persisted();
+    if (!persisted) await navigator.storage.persist();
+  }
+}
+
 const encodedJWT = Cookies.get("jwt");
-const decodedJWT = encodedJWT && decodeJwt(encodedJWT);
-const userID = decodedJWT?.sub ? (decodedJWT.sub as string) : "anon";
-const server = import.meta.env.VITE_PUBLIC_SERVER;
+const userID = getStableUserID();
+const storageKey = getStableStorageKey();
+const server = import.meta.env.VITE_PUBLIC_SERVER ?? "http://localhost:4848";
 const auth = encodedJWT;
+const getQueriesURL = "http://localhost:4000/api/zero/get-queries";
 
 function AppContent() {
   const z = useZero<Schema>();
   initZero(z);
-  
-  z.preload(queries.recentEntities(500));
-  
+
+  useEffect(() => {
+    requestPersistentStorage().catch(() => {});
+  }, []);
+
   return (
     <BrowserRouter>
       <GlobalNav />
       <Routes>
         <Route path="/" element={<HomePage />} />
         <Route path="/counter" element={<CounterPage />} />
-        <Route path="/entities" element={<EntitiesList />} />
-        <Route path="/investors" element={<EntitiesList initialCategory="investor" />} />
         <Route path="/assets" element={<AssetsTablePage />} />
+        <Route path="/assets/:asset" element={<AssetDetailPage />} />
         <Route path="/superinvestors" element={<SuperinvestorsTablePage />} />
-        <Route path="/entities/:id" element={<EntityDetail />} />
-        <Route path="/:category/:code" element={<CikDetail />} />
+        <Route path="/superinvestors/:cik" element={<SuperinvestorDetailPage />} />
         <Route path="/profile" element={<UserProfile />} />
       </Routes>
     </BrowserRouter>
@@ -58,7 +88,7 @@ function AppContent() {
 
 function HomePage() {
   const z = useZero<Schema>();
-  
+
   const [users] = useQuery(queries.listUsers());
   const [mediums] = useQuery(queries.listMediums());
 
@@ -67,7 +97,8 @@ function HomePage() {
 
   const [allMessages] = useQuery(queries.messagesFeed(null, ""));
   const [filteredMessages] = useQuery(
-    queries.messagesFeed(filterUser || null, filterText)
+    queries.messagesFeed(filterUser || null, filterText),
+    { ttl: "none" }
   );
 
   const hasFilters = filterUser || filterText;
@@ -86,7 +117,11 @@ function HomePage() {
             <h1 className="text-3xl font-bold">Messages</h1>
             <div className="flex items-center gap-4">
               <ThemeSwitcher />
-              {viewer && <span className="text-sm">Logged in as <strong>{viewer.name}</strong></span>}
+              {viewer && (
+                <span className="text-sm">
+                  Logged in as <strong>{viewer.name}</strong>
+                </span>
+              )}
               {viewer ? (
                 <button
                   className="btn btn-sm btn-outline"
@@ -143,7 +178,9 @@ function HomePage() {
             >
               Remove Messages
             </RepeatButton>
-            <span className="text-sm italic opacity-70">(hold down buttons to repeat)</span>
+            <span className="text-sm italic opacity-70">
+              (hold down buttons to repeat)
+            </span>
           </div>
 
           <div className="flex justify-center">
@@ -262,7 +299,16 @@ function HomePage() {
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
-    <ZeroProvider {...{ userID, auth, server, schema }}>
+    <ZeroProvider
+      {...{
+        userID,
+        auth,
+        server,
+        schema,
+        storageKey,
+        getQueriesURL,
+      }}
+    >
       <AppContent />
     </ZeroProvider>
   </StrictMode>

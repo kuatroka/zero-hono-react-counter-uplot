@@ -61,12 +61,6 @@ const valueQuarter = table("value_quarters")
   })
   .primaryKey("quarter");
 
-const cikDirectory = table("cik_directory")
-  .columns({
-    cik: string(),
-    cik_name: string(),
-  })
-  .primaryKey("cik");
 
 const entity = table("entities")
   .columns({
@@ -127,7 +121,7 @@ const messageRelationships = relationships(message, ({ one }) => ({
 }));
 
 export const schema = createSchema({
-  tables: [user, medium, message, counter, valueQuarter, cikDirectory, entity, userCounter, searches, asset, superinvestor],
+  tables: [user, medium, message, counter, valueQuarter, entity, userCounter, searches, asset, superinvestor],
   relationships: [messageRelationships],
 });
 
@@ -139,7 +133,6 @@ export type Medium = Row<typeof schema.tables.medium>;
 export type User = Row<typeof schema.tables.user>;
 export type Counter = Row<typeof schema.tables.counters>;
 export type ValueQuarter = Row<typeof schema.tables.value_quarters>;
-export type CikDirectory = Row<typeof schema.tables.cik_directory>;
 export type Entity = Row<typeof schema.tables.entities>;
 export type UserCounter = Row<typeof schema.tables.user_counters>;
 export type Search = Row<typeof schema.tables.searches>;
@@ -199,11 +192,6 @@ export const permissions = definePermissions<AuthData, Schema>(schema, () => {
       },
     },
     value_quarters: {
-      row: {
-        select: ANYONE_CAN,
-      },
-    },
-    cik_directory: {
       row: {
         select: ANYONE_CAN,
       },

@@ -34,6 +34,11 @@ interface DataTableProps<T> {
   defaultPageSize?: number;
   defaultSortColumn?: keyof T;
   defaultSortDirection?: 'asc' | 'desc';
+  initialPage?: number;
+  onPageChange?: (page: number) => void;
+  totalCount?: number;
+  onSearchChange?: (value: string) => void;
+  searchDisabled?: boolean;
 }
 
 export function DataTable<T extends { id: number | string }>({
@@ -43,14 +48,25 @@ export function DataTable<T extends { id: number | string }>({
   defaultPageSize = 20,
   defaultSortColumn,
   defaultSortDirection = 'asc',
+  initialPage,
+  onPageChange,
+  totalCount,
+  onSearchChange,
+  searchDisabled = false,
 }: DataTableProps<T>) {
   const [searchQuery, setSearchQuery] = useState('');
   const [sortColumn, setSortColumn] = useState<keyof T | null>(defaultSortColumn ?? null);
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>(defaultSortDirection);
-  const [currentPage, setCurrentPage] = useState(1);
+  const [currentPage, setCurrentPage] = useState(initialPage ?? 1);
   const [pageSize, setPageSize] = useState(defaultPageSize);
   const [focusedRowIndex, setFocusedRowIndex] = useState<number>(-1);
   const tableBodyRef = useRef<HTMLTableSectionElement>(null);
+
+  useEffect(() => {
+    if (initialPage != null) {
+      setCurrentPage(initialPage);
+    }
+  }, [initialPage]);
 
   const searchableColumns = useMemo(
     () => columns.filter(col => col.searchable),
@@ -58,7 +74,7 @@ export function DataTable<T extends { id: number | string }>({
   );
 
   const filteredData = useMemo(() => {
-    if (!searchQuery.trim()) return data;
+    if (searchDisabled || !searchQuery.trim()) return data;
 
     const query = searchQuery.toLowerCase();
     return data.filter(row =>
@@ -97,8 +113,9 @@ export function DataTable<T extends { id: number | string }>({
   }, [filteredData, sortColumn, sortDirection]);
 
   const totalPages = Math.ceil(sortedData.length / pageSize);
+  const displayTotalCount = totalCount ?? sortedData.length;
   const startIndex = (currentPage - 1) * pageSize;
-  const endIndex = Math.min(startIndex + pageSize, sortedData.length);
+  const endIndex = Math.min(startIndex + pageSize, displayTotalCount);
   const paginatedData = sortedData.slice(startIndex, endIndex);
 
   const handleSort = (column: keyof T) => {
@@ -117,18 +134,39 @@ export function DataTable<T extends { id: number | string }>({
 
   const handleSearch = (value: string) => {
     setSearchQuery(value);
-    setCurrentPage(1);
+    onSearchChange?.(value);
+    const newPage = 1;
+    setCurrentPage(newPage);
+    onPageChange?.(newPage);
   };
 
   const handlePageSizeChange = (value: string) => {
     setPageSize(Number(value));
-    setCurrentPage(1);
+    const newPage = 1;
+    setCurrentPage(newPage);
+    onPageChange?.(newPage);
   };
 
-  const handleFirstPage = () => setCurrentPage(1);
-  const handlePreviousPage = () => setCurrentPage(Math.max(1, currentPage - 1));
-  const handleNextPage = () => setCurrentPage(Math.min(totalPages, currentPage + 1));
-  const handleLastPage = () => setCurrentPage(totalPages);
+  const handleFirstPage = () => {
+    const newPage = 1;
+    setCurrentPage(newPage);
+    onPageChange?.(newPage);
+  };
+  const handlePreviousPage = () => {
+    const newPage = Math.max(1, currentPage - 1);
+    setCurrentPage(newPage);
+    onPageChange?.(newPage);
+  };
+  const handleNextPage = () => {
+    const newPage = Math.min(totalPages, currentPage + 1);
+    setCurrentPage(newPage);
+    onPageChange?.(newPage);
+  };
+  const handleLastPage = () => {
+    const newPage = totalPages;
+    setCurrentPage(newPage);
+    onPageChange?.(newPage);
+  };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (paginatedData.length === 0) return;
@@ -248,7 +286,7 @@ export function DataTable<T extends { id: number | string }>({
 
       <div className="flex flex-col sm:flex-row gap-4 items-center justify-between">
         <div className="text-sm text-muted-foreground">
-          Showing {sortedData.length === 0 ? 0 : startIndex + 1}-{endIndex} of {sortedData.length} row(s)
+          Showing {displayTotalCount === 0 ? 0 : startIndex + 1}-{endIndex} of {displayTotalCount} row(s)
         </div>
 
         <div className="flex flex-col sm:flex-row gap-4 items-center">
