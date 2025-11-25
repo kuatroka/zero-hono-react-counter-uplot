@@ -120,8 +120,8 @@ export function DataTable<T extends { id: number | string }>({
     return sorted;
   }, [filteredData, sortColumn, sortDirection]);
 
-  const totalPages = Math.ceil(sortedData.length / pageSize);
   const displayTotalCount = totalCount ?? sortedData.length;
+  const totalPages = displayTotalCount === 0 ? 0 : Math.ceil(displayTotalCount / pageSize);
   const startIndex = (currentPage - 1) * pageSize;
   const endIndex = Math.min(startIndex + pageSize, displayTotalCount);
   const paginatedData = sortedData.slice(startIndex, endIndex);
