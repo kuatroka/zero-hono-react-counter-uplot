@@ -39,6 +39,7 @@ interface DataTableProps<T> {
   totalCount?: number;
   onSearchChange?: (value: string) => void;
   searchDisabled?: boolean;
+  searchValue?: string;
 }
 
 export function DataTable<T extends { id: number | string }>({
@@ -53,8 +54,9 @@ export function DataTable<T extends { id: number | string }>({
   totalCount,
   onSearchChange,
   searchDisabled = false,
+  searchValue,
 }: DataTableProps<T>) {
-  const [searchQuery, setSearchQuery] = useState('');
+  const [searchQuery, setSearchQuery] = useState(searchValue ?? '');
   const [sortColumn, setSortColumn] = useState<keyof T | null>(defaultSortColumn ?? null);
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>(defaultSortDirection);
   const [currentPage, setCurrentPage] = useState(initialPage ?? 1);
@@ -67,6 +69,12 @@ export function DataTable<T extends { id: number | string }>({
       setCurrentPage(initialPage);
     }
   }, [initialPage]);
+
+  useEffect(() => {
+    if (searchValue !== undefined) {
+      setSearchQuery(searchValue);
+    }
+  }, [searchValue]);
 
   const searchableColumns = useMemo(
     () => columns.filter(col => col.searchable),
@@ -206,18 +214,11 @@ export function DataTable<T extends { id: number | string }>({
     }
   }, [focusedRowIndex]);
 
-  if (data.length === 0) {
-    return (
-      <div className="text-center py-8">
-        <p className="text-muted-foreground">No data available</p>
-      </div>
-    );
-  }
-
   return (
     <div className="space-y-4" onKeyDown={handleKeyDown}>
       <div className="w-full sm:w-96">
         <Input
+          type="search"
           placeholder={searchPlaceholder}
           value={searchQuery}
           onChange={(e) => handleSearch(e.target.value)}

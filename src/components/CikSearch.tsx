@@ -1,12 +1,14 @@
 import { useEffect, useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { useQuery } from "@rocicorp/zero/react";
 import { queries } from "@/zero/queries";
 import { Input } from "@/components/ui/input";
 
 export function CikSearch() {
   const navigate = useNavigate();
-  const [query, setQuery] = useState("");
+  const [searchParams, setSearchParams] = useSearchParams();
+  const queryParam = searchParams.get('q') ?? '';
+  const [query, setQuery] = useState(queryParam);
   const [isOpen, setIsOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [highlightedIndex, setHighlightedIndex] = useState(-1);
@@ -42,9 +44,24 @@ export function CikSearch() {
     }
   }, [shouldSearch, results]);
 
+  const handleQueryChange = (value: string) => {
+    setQuery(value);
+    const params = new URLSearchParams(searchParams);
+    if (value.trim()) {
+      params.set('q', value.trim());
+    } else {
+      params.delete('q');
+    }
+    setSearchParams(params);
+  };
+
   const handleNavigate = (result: any) => {
     setIsOpen(false);
     setQuery("");
+    // Clear the query parameter when navigating
+    const params = new URLSearchParams(searchParams);
+    params.delete('q');
+    setSearchParams(params);
 
     if (result.category === "superinvestors") {
       navigate(`/superinvestors/${encodeURIComponent(result.code)}`);
@@ -88,7 +105,7 @@ export function CikSearch() {
         type="search"
         placeholder="Search CIKs, assets..."
         value={query}
-        onChange={(e) => setQuery(e.target.value)}
+        onChange={(e) => handleQueryChange(e.target.value)}
         onKeyDown={handleKeyDown}
         className="w-full sm:w-96"
       />

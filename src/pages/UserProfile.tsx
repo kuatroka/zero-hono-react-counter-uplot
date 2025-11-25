@@ -1,4 +1,11 @@
-export function UserProfile() {
+import { useEffect } from 'react';
+
+export function UserProfile({ onReady }: { onReady: () => void }) {
+  // Signal ready immediately for static page
+  useEffect(() => {
+    onReady();
+  }, [onReady]);
+
   return (
     <div className="container mx-auto p-8">
       <h1 className="text-3xl font-bold mb-6 text-foreground">User Profile</h1>

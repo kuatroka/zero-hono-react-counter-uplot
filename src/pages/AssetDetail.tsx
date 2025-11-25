@@ -1,33 +1,40 @@
-import { useParams, Link, useNavigate } from 'react-router-dom';
+import { useEffect } from 'react';
+import { useParams, Link } from 'react-router-dom';
 import { useQuery } from '@rocicorp/zero/react';
 import { queries } from '@/zero/queries';
-import { Schema } from '@/schema';
 
-export function AssetDetailPage() {
+export function AssetDetailPage({ onReady }: { onReady: () => void }) {
   const { asset } = useParams();
-  const navigate = useNavigate();
 
-  if (!asset) return <div className="p-6">Missing asset id.</div>;
-
-  const [rows] = useQuery(
+  const [rows, result] = useQuery(
     queries.assetBySymbol(asset || ''),
     { enabled: Boolean(asset) }
   );
 
-  if (!rows) {
+  const record = rows?.[0];
+
+  // Signal ready when data is available (from cache or server)
+  useEffect(() => {
+    if (record || result.type === 'complete') {
+      onReady();
+    }
+  }, [record, result.type, onReady]);
+
+  if (!asset) return <div className="p-6">Missing asset id.</div>;
+
+  if (record) {
+    // We have data, render it immediately (even if still syncing)
+  } else if (result.type === 'unknown') {
+    // Still loading and no cached data yet
     return <div className="p-6">Loading…</div>;
+  } else {
+    // Query completed but no record found
+    return <div className="p-6">Asset not found.</div>;
   }
-
-  const record = rows[0];
-
-  if (!record) return <div className="p-6">Asset not found.</div>;
 
   return (
     <div className="container mx-auto px-4 py-8 max-w-4xl">
-      <div className="flex items-center gap-3 mb-6">
-        <button className="btn btn-ghost btn-sm" onClick={() => navigate(-1)}>
-          ← Back
-        </button>
+      <div className="mb-6">
         <h1 className="text-3xl font-bold">{record.assetName}</h1>
       </div>
       <div className="space-y-3 text-lg">

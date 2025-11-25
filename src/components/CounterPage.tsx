@@ -9,7 +9,7 @@ import { Schema } from "../schema";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
-export function CounterPage() {
+export function CounterPage({ onReady }: { onReady: () => void }) {
   const z = useZero<Schema>();
   const isLoggedIn = z.userID !== "anon";
   const userCounterKey = isLoggedIn ? z.userID : "__guest__";
@@ -30,9 +30,17 @@ export function CounterPage() {
     }
   };
   
-  const [counterRows] = useQuery(queries.counterCurrent("main"));
+  const [counterRows, counterResult] = useQuery(queries.counterCurrent("main"));
   const [userCounterRows] = useQuery(queries.userCounter(userCounterKey));
-  const [quarters] = useQuery(queries.quartersSeries());
+  const [quarters, quartersResult] = useQuery(queries.quartersSeries());
+
+  // Signal ready when data is available (from cache or server)
+  useEffect(() => {
+    if (counterRows && counterRows.length > 0 && quarters && quarters.length > 0 || 
+        (counterResult.type === 'complete' && quartersResult.type === 'complete')) {
+      onReady();
+    }
+  }, [counterRows, quarters, counterResult.type, quartersResult.type, onReady]);
 
   const counter = counterRows[0];
   const userCounter = isLoggedIn ? userCounterRows[0] : undefined;

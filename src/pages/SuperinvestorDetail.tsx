@@ -1,30 +1,40 @@
-import { useParams, Link, useNavigate } from 'react-router-dom';
-import { useQuery, useZero } from '@rocicorp/zero/react';
+import { useEffect } from 'react';
+import { useParams, Link } from 'react-router-dom';
+import { useQuery } from '@rocicorp/zero/react';
 import { queries } from '@/zero/queries';
-import { Schema } from '@/schema';
 
-export function SuperinvestorDetailPage() {
+export function SuperinvestorDetailPage({ onReady }: { onReady: () => void }) {
   const { cik } = useParams();
-  const z = useZero<Schema>();
-  const navigate = useNavigate();
 
   const [rows, result] = useQuery(
-    cik ? queries.superinvestorByCik(cik) : undefined,
+    queries.superinvestorByCik(cik || ''),
     { enabled: Boolean(cik) }
   );
 
   const record = rows?.[0];
 
+  // Signal ready when data is available (from cache or server)
+  useEffect(() => {
+    if (record || result.type === 'complete') {
+      onReady();
+    }
+  }, [record, result.type, onReady]);
+
   if (!cik) return <div className="p-6">Missing CIK.</div>;
-  if (result.type === 'loading') return <div className="p-6">Loading…</div>;
-  if (!record) return <div className="p-6">Superinvestor not found.</div>;
+
+  if (record) {
+    // We have data, render it immediately (even if still syncing)
+  } else if (result.type === 'unknown') {
+    // Still loading and no cached data yet
+    return <div className="p-6">Loading…</div>;
+  } else {
+    // Query completed but no record found
+    return <div className="p-6">Superinvestor not found.</div>;
+  }
 
   return (
     <div className="container mx-auto px-4 py-8 max-w-4xl">
-      <div className="flex items-center gap-3 mb-6">
-        <button className="btn btn-ghost btn-sm" onClick={() => navigate(-1)}>
-          ← Back
-        </button>
+      <div className="mb-6">
         <h1 className="text-3xl font-bold">{record.cikName}</h1>
       </div>
       <div className="space-y-3 text-lg">

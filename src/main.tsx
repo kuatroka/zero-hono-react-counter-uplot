@@ -66,31 +66,44 @@ function AppContent() {
   const z = useZero<Schema>();
   initZero(z);
 
+  // Prevent UI flash on refresh: hide until content is ready
+  const [contentReady, setContentReady] = useState(false);
+  const onReady = () => setContentReady(true);
+
   useEffect(() => {
     requestPersistentStorage().catch(() => {});
   }, []);
 
   return (
     <BrowserRouter>
-      <GlobalNav />
-      <Routes>
-        <Route path="/" element={<HomePage />} />
-        <Route path="/counter" element={<CounterPage />} />
-        <Route path="/assets" element={<AssetsTablePage />} />
-        <Route path="/assets/:asset" element={<AssetDetailPage />} />
-        <Route path="/superinvestors" element={<SuperinvestorsTablePage />} />
-        <Route path="/superinvestors/:cik" element={<SuperinvestorDetailPage />} />
-        <Route path="/profile" element={<UserProfile />} />
-      </Routes>
+      <div style={{ visibility: contentReady ? 'visible' : 'hidden' }}>
+        <GlobalNav />
+        <Routes>
+          <Route path="/" element={<HomePage onReady={onReady} />} />
+          <Route path="/counter" element={<CounterPage onReady={onReady} />} />
+          <Route path="/assets" element={<AssetsTablePage onReady={onReady} />} />
+          <Route path="/assets/:asset" element={<AssetDetailPage onReady={onReady} />} />
+          <Route path="/superinvestors" element={<SuperinvestorsTablePage onReady={onReady} />} />
+          <Route path="/superinvestors/:cik" element={<SuperinvestorDetailPage onReady={onReady} />} />
+          <Route path="/profile" element={<UserProfile onReady={onReady} />} />
+        </Routes>
+      </div>
     </BrowserRouter>
   );
 }
 
-function HomePage() {
+function HomePage({ onReady }: { onReady: () => void }) {
   const z = useZero<Schema>();
 
-  const [users] = useQuery(queries.listUsers());
+  const [users, usersResult] = useQuery(queries.listUsers());
   const [mediums] = useQuery(queries.listMediums());
+
+  // Signal ready when data is available (from cache or server)
+  useEffect(() => {
+    if (users.length > 0 || usersResult.type === 'complete') {
+      onReady();
+    }
+  }, [users.length, usersResult.type, onReady]);
 
   const [filterUser, setFilterUser] = useState("");
   const [filterText, setFilterText] = useState("");
