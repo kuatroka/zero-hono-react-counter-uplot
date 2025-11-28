@@ -1,7 +1,8 @@
 # drizzle-schema-management Specification
 
 ## Purpose
-TBD - created by archiving change migrate-to-ztunes-architecture. Update Purpose after archive.
+Defines the architecture for managing database schema using Drizzle ORM, serving as the single source of truth for Postgres and Zero schema generation.
+
 ## Requirements
 ### Requirement: Single Source of Truth Schema Definition
 

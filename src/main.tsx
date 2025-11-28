@@ -79,7 +79,8 @@ function AppContent() {
       <div style={{ visibility: contentReady ? 'visible' : 'hidden' }}>
         <GlobalNav />
         <Routes>
-          <Route path="/" element={<HomePage onReady={onReady} />} />
+          <Route path="/" element={<LandingPage onReady={onReady} />} />
+          <Route path="/messages" element={<MessagesPage onReady={onReady} />} />
           <Route path="/counter" element={<CounterPage onReady={onReady} />} />
           <Route path="/assets" element={<AssetsTablePage onReady={onReady} />} />
           <Route path="/assets/:asset" element={<AssetDetailPage onReady={onReady} />} />
@@ -92,7 +93,26 @@ function AppContent() {
   );
 }
 
-function HomePage({ onReady }: { onReady: () => void }) {
+function LandingPage({ onReady }: { onReady: () => void }) {
+  useEffect(() => {
+    onReady();
+  }, [onReady]);
+
+  return (
+    <div className="min-h-screen bg-base-200">
+      <div className="container mx-auto px-4 py-8 max-w-7xl">
+        <div className="flex flex-col items-center justify-center gap-6 min-h-[60vh]">
+          <h1 className="text-4xl font-bold text-center">Welcome to fintellectus</h1>
+          <p className="text-lg text-muted-foreground text-center max-w-2xl">
+            Your gateway to superinvestor insights and asset analysis.
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function MessagesPage({ onReady }: { onReady: () => void }) {
   const z = useZero<Schema>();
 
   const [users, usersResult] = useQuery(queries.listUsers());

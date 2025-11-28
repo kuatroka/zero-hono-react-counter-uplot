@@ -26,6 +26,7 @@ export function SuperinvestorsTablePage({ onReady }: { onReady: () => void }) {
   const searchParam = searchParams.get('search') ?? '';
   const [searchTerm, setSearchTerm] = useState(searchParam);
   const isTypingRef = useRef(false);
+  const rowSelectedRef = useRef(false);
 
   // Sync searchTerm with URL only on external navigation (not while typing)
   useEffect(() => {
@@ -35,7 +36,32 @@ export function SuperinvestorsTablePage({ onReady }: { onReady: () => void }) {
     isTypingRef.current = false;
   }, [searchParam]);
 
+  // Clear search term on mount if no row was selected (page refresh scenario)
+  useEffect(() => {
+    if (searchParam && !rowSelectedRef.current) {
+      // Clear the search param on refresh if no row was selected
+      const params = new URLSearchParams(searchParams);
+      params.delete('search');
+      params.set('page', '1');
+      setSearchParams(params, { replace: true });
+      setSearchTerm('');
+    }
+  }, []); // Run only on mount
+
   const trimmedSearch = searchTerm.trim();
+
+  // Sync URL with searchTerm state changes
+  useEffect(() => {
+    if (!isTypingRef.current) return; // Only update URL when user is typing
+
+    const params = new URLSearchParams();
+    params.set('page', '1');
+    if (searchTerm.trim()) {
+      params.set('search', searchTerm);
+    }
+    setSearchParams(params);
+    isTypingRef.current = false;
+  }, [searchTerm, setSearchParams]);
 
   const [windowLimit, setWindowLimit] = useState(() => {
     const required = currentPage * tablePageSize;
@@ -61,7 +87,7 @@ export function SuperinvestorsTablePage({ onReady }: { onReady: () => void }) {
   const readyCalledRef = useRef(false);
   useEffect(() => {
     if (readyCalledRef.current) return; // Only call onReady once
-    
+
     if (trimmedSearch) {
       // In search mode: ready when search results arrive (has data or query complete)
       if ((superinvestorSearchRows && superinvestorSearchRows.length > 0) || searchResult.type === 'complete') {
@@ -79,12 +105,12 @@ export function SuperinvestorsTablePage({ onReady }: { onReady: () => void }) {
 
   const searchSuperinvestors: Superinvestor[] | undefined = trimmedSearch
     ? superinvestorSearchRows?.map((row: Search) => ({
-        id: row.id,
-        cik: row.code,
-        cikName: row.name,
-        cikTicker: '',
-        activePeriods: '',
-      }))
+      id: row.id,
+      cik: row.code,
+      cikName: row.name,
+      cikTicker: '',
+      activePeriods: '',
+    }))
     : undefined;
 
   const superinvestors = trimmedSearch ? searchSuperinvestors || [] : superinvestorsPageRows || [];
@@ -128,14 +154,6 @@ export function SuperinvestorsTablePage({ onReady }: { onReady: () => void }) {
   const handleSearchChange = (value: string) => {
     isTypingRef.current = true;
     setSearchTerm(value);
-    const params = new URLSearchParams();
-    params.set('page', '1');
-    if (value.trim()) {
-      params.set('search', value.trim());
-    } else {
-      params.delete('search');
-    }
-    setSearchParams(params);
   };
 
   const columns: ColumnDef<Superinvestor>[] = [
@@ -153,6 +171,7 @@ export function SuperinvestorsTablePage({ onReady }: { onReady: () => void }) {
           }}
           onClick={(e) => {
             e.preventDefault();
+            rowSelectedRef.current = true;
             z.preload(queries.superinvestorByCik(row.cik), { ttl: '5m' });
             navigate(`/superinvestors/${encodeURIComponent(row.cik)}`);
           }}

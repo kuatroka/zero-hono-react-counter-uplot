@@ -1,0 +1,18 @@
+## 1. Implementation
+- [x] 1.1 Install Dependencies
+  - Install `drizzle-orm` and `drizzle-kit`.
+  - Add `dotenv` if needed (likely already present).
+- [x] 1.2 Configure Drizzle
+  - Create `drizzle.config.ts` pointing to `src/db/schema.ts` and migration output folder.
+  - Ensure it uses `ZERO_UPSTREAM_DB` from env.
+- [x] 1.3 Define Schema
+  - Create `src/db/schema.ts`.
+  - Port tables: `counters`, `entities`, `user_counters`, `searches`, `superinvestors`, `assets`, `value_quarters`, `cusip_quarter_investor_activity`.
+  - Ensure types align with existing Postgres schema.
+- [x] 1.4 Setup Migration Workflow
+  - Create a script `db:generate` -> `drizzle-kit generate`.
+  - Create a script `db:migrate` -> `drizzle-kit migrate`.
+  - Update `docker-compose.yml` to potentially remove the manual sql mapping (or keep it for fresh init).
+- [x] 1.5 Documentation
+  - Update `README.md` with new migration commands.
+  - Update `openspec/specs/drizzle-schema-management/spec.md` purpose (remove TBD).

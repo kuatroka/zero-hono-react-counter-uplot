@@ -9,6 +9,13 @@ A real-time analytics application demonstrating **Zero-sync** (Rocicorp's sync f
 - **⚡ Real-time Sync:** Zero-sync keeps data synchronized across multiple browser tabs
 - **🎯 Modern Stack:** React 19 + Bun + Hono + PostgreSQL + React Router
 
+## Hidden Routes
+
+The following routes are available but not linked in the navigation:
+
+- **`/counter`** - Interactive counter with 10 different uPlot chart visualizations
+- **`/messages`** - Messages demo page with real-time sync features
+
 **📖 Documentation:**
 - [CURRENT-STATE.md](./CURRENT-STATE.md) - Architecture and implementation history
 - [ZERO-SYNC-PATTERNS.md](./ZERO-SYNC-PATTERNS.md) - **Zero-sync data access patterns (MUST READ)**
@@ -238,6 +245,25 @@ lsof -ti:4848 | xargs kill -9
 ```bash
 lsof -i :4849
 lsof -i :4848
+```
+
+## Database Migrations
+
+This project uses [Drizzle ORM](https://orm.drizzle.team/) for schema management.
+
+**1. Modify Schema**
+Edit `src/db/schema.ts` to add/change tables.
+
+**2. Generate Migration**
+Create SQL migration files from your schema changes:
+```bash
+bun run db:generate
+```
+
+**3. Apply Migration**
+Apply changes to the running database (without data loss):
+```bash
+bun run db:migrate
 ```
 
 ## Performance Benchmarking

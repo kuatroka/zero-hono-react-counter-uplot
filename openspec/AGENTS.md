@@ -735,7 +735,133 @@ See `src/zero/queries.ts` for correct synced query implementations:
 
 ### Tier 1: Highest Impact (Implement First)
 
-#### 1. Enable React Compiler (Forget)
+#### 1. Prevent UI Flash on Page Refresh (CRITICAL)
+**Impact:** Eliminates visible UI flash/flicker on page refresh
+
+**Problem:** When users refresh the page, the UI would flash empty state before data loaded from cache, even though Zero cached data in IndexedDB and data loaded quickly.
+
+**Solution: `visibility: hidden` Pattern from zbugs**
+
+Inspired by the official Zero reference app `zbugs`, hide the entire app until content is ready:
+
+**Step 1: App Root Level (`main.tsx`):**
+```typescript
+function AppContent() {
+  const z = useZero<Schema>();
+  initZero(z);
+
+  // Prevent UI flash on refresh: hide until content is ready
+  const [contentReady, setContentReady] = useState(false);
+  const onReady = () => setContentReady(true);
+
+  return (
+    <BrowserRouter>
+      <div style={{ visibility: contentReady ? 'visible' : 'hidden' }}>
+        <GlobalNav />
+        <Routes>
+          <Route path="/" element={<HomePage onReady={onReady} />} />
+          <Route path="/assets" element={<AssetsTablePage onReady={onReady} />} />
+          {/* ... other routes */}
+        </Routes>
+      </div>
+    </BrowserRouter>
+  );
+}
+```
+
+**Key points:**
+- Use `visibility: hidden` (NOT `display: none`) to maintain layout
+- Container is hidden until `contentReady` is true
+- Each page receives `onReady` callback
+
+**Step 2: Page Components Signal When Ready:**
+
+**Data-driven pages** (AssetsTable, SuperinvestorsTable):
+```typescript
+export function AssetsTablePage({ onReady }: { onReady: () => void }) {
+  const [assetsPageRows, assetsResult] = useQuery(
+    queries.assetsPage(windowLimit, 0),
+    { ttl: '5m', enabled: !trimmedSearch }
+  );
+
+  // Signal ready when data is available (from cache or server)
+  useEffect(() => {
+    if (assetsPageRows && assetsPageRows.length > 0 || assetsResult.type === 'complete') {
+      onReady();
+    }
+  }, [assetsPageRows, assetsResult.type, onReady]);
+  
+  // ... rest of component
+}
+```
+
+**Detail pages** (AssetDetail, SuperinvestorDetail):
+```typescript
+export function AssetDetailPage({ onReady }: { onReady: () => void }) {
+  const [rows, result] = useQuery(
+    queries.assetBySymbol(asset || ''),
+    { enabled: Boolean(asset) }
+  );
+
+  const record = rows?.[0];
+
+  // Signal ready when data is available (from cache or server)
+  useEffect(() => {
+    if (record || result.type === 'complete') {
+      onReady();
+    }
+  }, [record, result.type, onReady]);
+  
+  // ... rest of component
+}
+```
+
+**Static pages** (UserProfile):
+```typescript
+export function UserProfile({ onReady }: { onReady: () => void }) {
+  // Signal ready immediately for static page
+  useEffect(() => {
+    onReady();
+  }, [onReady]);
+  
+  // ... rest of component
+}
+```
+
+**How It Works:**
+
+*On Initial Load:*
+1. App renders with `visibility: hidden`
+2. Zero loads data from IndexedDB cache
+3. Page component receives cached data
+4. Page calls `onReady()`
+5. App becomes visible with data already rendered
+
+*On Refresh:*
+1. App renders with `visibility: hidden` (user sees blank page briefly)
+2. Zero immediately loads from IndexedDB cache (<50ms)
+3. Page component receives cached data
+4. Page calls `onReady()`
+5. App becomes visible with data (no flash!)
+
+**Why `visibility: hidden` vs `display: none`?**
+- `visibility: hidden`: Element takes up space, layout is calculated
+- `display: none`: Element removed from layout
+
+Using `visibility` ensures:
+- Layout is ready when content becomes visible
+- No layout shift when transitioning
+- Smoother visual experience
+
+**Reference:** This pattern is used in the official Zero reference app `zbugs` (`apps/zbugs/src/root.tsx` and `apps/zbugs/src/pages/list/list-page.tsx`)
+
+**Result:**
+✅ No UI flash on page refresh
+✅ Search terms preserved in URL
+✅ Data loads instantly from cache
+✅ Smooth user experience
+
+#### 2. Enable React Compiler (Forget)
 **Impact:** 10-15% faster initial loads, 2.5× faster interactions
 
 ```typescript
@@ -764,7 +890,7 @@ bun add -D babel-plugin-react-compiler
 - Reduces need for manual `React.memo`, `useMemo`, `useCallback`
 - Based on static analysis of component dependencies
 
-#### 2. Zero Snapshots for Fast Cold Starts
+#### 3. Zero Snapshots for Fast Cold Starts
 **Impact:** 10-50× faster cold start times
 
 ```typescript
@@ -788,9 +914,37 @@ async function initZero() {
 - Snapshots + incremental deltas are dramatically faster
 - Critical for apps with 500+ preloaded entities
 
-#### 3. Zero Query Optimization with TTL
+#### 4. Zero Query Optimization with TTL Strategy
 **Impact:** Reduces subscription churn, memory usage, server load
 
+**Use 5-minute TTL for main queries** (based on ztunes analysis with 88k artists, 200k albums):
+
+```typescript
+// ✅ CORRECT - Main data views use 5-minute TTL
+const [assets] = useQuery(
+  queries.assetsPage(limit, 0),
+  { ttl: '5m' } // ⭐ Allows instant re-navigation within 5 minutes
+);
+
+const [superinvestors] = useQuery(
+  queries.superinvestorsPage(limit, 0),
+  { ttl: '5m' }
+);
+
+// ❌ AVOID - Short TTLs force server round-trips too often
+const [assets] = useQuery(
+  queries.assetsPage(limit, 0),
+  { ttl: '10s' } // Too short!
+);
+```
+
+**Why 5-minute TTL?**
+- Instant re-navigation when returning to a page within 5 minutes
+- Automatic real-time updates while cached
+- Reduced server load
+- Better user experience
+
+**Ephemeral queries use `ttl: 'none'`:**
 ```typescript
 // ✅ CORRECT - Ephemeral queries (search, typeahead)
 const [results] = useQuery(
@@ -798,12 +952,6 @@ const [results] = useQuery(
     ? z.query.entities.where('name', 'ILIKE', `%${query}%`).limit(5)
     : z.query.entities.limit(0),
   { ttl: 'none' } // ⭐ Unregister immediately when query changes
-);
-
-// ✅ CORRECT - Long-lived queries (main data views)
-const [entities] = useQuery(
-  z.query.entities.orderBy('created_at', 'desc').limit(100)
-  // Default TTL is fine for persistent views
 );
 ```
 
@@ -814,13 +962,83 @@ const [entities] = useQuery(
 - `ttl:'none'` destroys subscription immediately on unmount
 
 **When to use:**
-- ✅ Search/typeahead inputs
-- ✅ Temporary modal/dialog queries
-- ✅ Per-keystroke filtered views
-- ❌ Main list views (use default TTL)
-- ❌ Detail pages (use default TTL)
+- ✅ Search/typeahead inputs (use `ttl: 'none'`)
+- ✅ Temporary modal/dialog queries (use `ttl: 'none'`)
+- ✅ Per-keystroke filtered views (use `ttl: 'none'`)
+- ✅ Main list views (use `ttl: '5m'`)
+- ✅ Detail pages (use `ttl: '5m'`)
+- ✅ Browsing data (use `ttl: '5m'`)
 
-#### 4. Route-Based Code Splitting
+#### 5. Preload Strategy for Instant Search and Browsing
+**Impact:** Instant local search, instant page navigation
+
+**Preload data at app startup** for instant local search and browsing:
+
+```typescript
+// src/zero-preload.ts
+export function preload(z: Zero<Schema>, { limit = 200 } = {}) {
+  const TTL = "5m";
+
+  // Browsing data (windowed pagination)
+  z.preload(queries.assetsPage(limit, 0), { ttl: TTL });
+  z.preload(queries.superinvestorsPage(limit, 0), { ttl: TTL });
+
+  // Search index for instant local search (1000 rows per category)
+  z.preload(queries.searchesByCategory("assets", "", 1000), { ttl: TTL });
+  z.preload(queries.searchesByCategory("superinvestors", "", 1000), { ttl: TTL });
+
+  // Global search index
+  z.preload(queries.searchesByName("", 100), { ttl: TTL });
+  
+  // Reference data
+  z.preload(queries.listUsers(), { ttl: TTL });
+  z.preload(queries.listMediums(), { ttl: TTL });
+}
+
+// Call in main.tsx or app initialization
+function AppContent() {
+  const z = useZero<Schema>();
+  
+  useEffect(() => {
+    preload(z);
+  }, [z]);
+  
+  // ...
+}
+```
+
+**Why preload the search index?**
+- Users get instant results from preloaded local data
+- Server results arrive async but don't "jostle" the UI
+- Both local and server results are sorted alphabetically
+- Local results are a valid prefix of full results
+
+**Jostle-Free Search UX:**
+From ztunes: *"We want to provide instant results over local data, but we don't want to 'jostle' (reorder) those results when server results come in."*
+
+**Solution:** Sort all query results consistently (alphabetically by name). This ensures:
+- Local results are always a valid prefix of server results
+- New results appear below existing results, not reordering them
+- Smooth user experience without UI jumping
+
+**Windowed Pagination:**
+Don't sync the entire table—use windowed pagination with a max limit:
+
+```typescript
+const DEFAULT_WINDOW_LIMIT = 1000;
+const MAX_WINDOW_LIMIT = 1000;
+
+// Only sync what's needed for current view + some margin
+const [assetsPageRows] = useQuery(
+  queries.assetsPage(windowLimit, 0),
+  { ttl: '5m', enabled: !trimmedSearch }
+);
+```
+
+**Performance Note:**
+Zero currently lacks first-class text indexing. Searches can be O(n) when there are fewer matching records than the limit or sort order doesn't match an index. For ~32k assets and ~15k superinvestors, this is acceptable. For larger datasets, consider server-side search or wait for Zero's upcoming text indexing feature.
+
+#### 6. Route-Based Code Splitting
 **Impact:** 30-40% smaller initial bundle
 
 ```typescript
@@ -854,7 +1072,7 @@ const router = createBrowserRouter([
 - ❌ Small shared components
 - ❌ Layout components
 
-#### 5. Batch Zero Operations
+#### 7. Batch Zero Operations
 **Impact:** 50-70% fewer CRDT operations, reduced metadata growth
 
 ```typescript
@@ -879,7 +1097,7 @@ z.transact(() => {
 
 ### Tier 2: High Impact (Implement Soon)
 
-#### 6. Use React Scan to Find Wasted Renders
+#### 8. Use React Scan to Find Wasted Renders
 **Impact:** Identifies actual performance bottlenecks
 
 ```bash
@@ -908,7 +1126,7 @@ if (import.meta.env.DEV) {
 - "Why did this render?" analysis
 - Perfect for identifying wasted renders in tables/charts
 
-#### 7. Virtualize Large Lists
+#### 9. Virtualize Large Lists
 **Impact:** Handle 10,000+ rows smoothly
 
 ```typescript
@@ -962,7 +1180,7 @@ bun add @tanstack/react-virtual
 - ❌ Small lists (<50 items)
 - ❌ Grids with few columns
 
-#### 8. Selective Preloading by Route
+#### 10. Selective Preloading by Route
 **Impact:** Reduces initial memory footprint, faster app start
 
 ```typescript
@@ -1004,7 +1222,7 @@ z.preload(z.query.entities.limit(500));
 - Use smaller limits for initial load
 - Lazy-load additional data on demand
 
-#### 9. Move Heavy Work to Web Workers
+#### 11. Move Heavy Work to Web Workers
 **Impact:** Keeps UI responsive during heavy operations
 
 ```typescript
@@ -1046,7 +1264,7 @@ export function useWorkerReconcile() {
 
 ### Tier 3: Medium Impact (Nice to Have)
 
-#### 10. Strategic Memoization
+#### 12. Strategic Memoization
 **Impact:** Prevents expensive recomputations
 
 **When to use manual memoization (even with React Compiler):**
@@ -1085,7 +1303,7 @@ const simpleValue = useMemo(() => count * 2, [count]); // Too simple!
 - JSX with no expensive children
 - Props that change frequently anyway
 
-#### 11. Partial Hydration for Offscreen Content
+#### 13. Partial Hydration for Offscreen Content
 **Impact:** Faster Time to Interactive
 
 ```typescript
@@ -1136,7 +1354,7 @@ function LazyChart() {
 - ❌ Above-the-fold content
 - ❌ Critical user interactions
 
-#### 12. React 19 Activity API for Hidden Content
+#### 14. React 19 Activity API for Hidden Content
 **Impact:** Deprioritizes hidden subtrees
 
 ```typescript
@@ -1160,7 +1378,7 @@ function TabPanel({ isActive, children }) {
 - Collapsed sections
 - Background panels
 
-#### 13. Optimize Chart Rendering
+#### 15. Optimize Chart Rendering
 **Impact:** Smooth real-time updates
 
 ```typescript
@@ -1207,7 +1425,7 @@ const QuarterChart = lazy(() => import('./QuarterChart'));
 - ✅ Debounce real-time data with `useDeferredValue`
 - ✅ Memoize chart options object
 
-#### 14. Metadata Garbage Collection
+#### 16. Metadata Garbage Collection
 **Impact:** Prevents long-term memory bloat
 
 ```typescript

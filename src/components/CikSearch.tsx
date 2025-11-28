@@ -12,6 +12,8 @@ export function CikSearch() {
   const [isOpen, setIsOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [highlightedIndex, setHighlightedIndex] = useState(-1);
+  const isTypingRef = useRef(false);
+  const resultSelectedRef = useRef(false);
 
   const trimmed = query.trim();
   const shouldSearch = trimmed.length >= 2;
@@ -20,6 +22,17 @@ export function CikSearch() {
     shouldSearch ? queries.searchesByName(trimmed, 10) : queries.searchesByName("", 0),
     { ttl: "5m" }
   );
+
+  // Clear search term on mount if no result was selected (page refresh scenario)
+  useEffect(() => {
+    if (queryParam && !resultSelectedRef.current) {
+      // Clear the query param on refresh if no result was selected
+      const params = new URLSearchParams(searchParams);
+      params.delete('q');
+      setSearchParams(params, { replace: true });
+      setQuery('');
+    }
+  }, []); // Run only on mount
 
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
@@ -35,6 +48,20 @@ export function CikSearch() {
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
+  // Sync URL with query state changes
+  useEffect(() => {
+    if (!isTypingRef.current) return; // Only update URL when user is typing
+
+    const params = new URLSearchParams(searchParams);
+    if (query.trim()) {
+      params.set('q', query);
+    } else {
+      params.delete('q');
+    }
+    setSearchParams(params);
+    isTypingRef.current = false;
+  }, [query, searchParams, setSearchParams]);
+
   useEffect(() => {
     setIsOpen(shouldSearch && !!results && results.length > 0);
     if (shouldSearch && results && results.length > 0) {
@@ -45,17 +72,12 @@ export function CikSearch() {
   }, [shouldSearch, results]);
 
   const handleQueryChange = (value: string) => {
+    isTypingRef.current = true;
     setQuery(value);
-    const params = new URLSearchParams(searchParams);
-    if (value.trim()) {
-      params.set('q', value.trim());
-    } else {
-      params.delete('q');
-    }
-    setSearchParams(params);
   };
 
   const handleNavigate = (result: any) => {
+    resultSelectedRef.current = true;
     setIsOpen(false);
     setQuery("");
     // Clear the query parameter when navigating
@@ -103,7 +125,7 @@ export function CikSearch() {
     <div ref={containerRef} className="relative w-full sm:w-auto">
       <Input
         type="search"
-        placeholder="Search CIKs, assets..."
+        placeholder="Search superinvestors, tickers..."
         value={query}
         onChange={(e) => handleQueryChange(e.target.value)}
         onKeyDown={handleKeyDown}
@@ -115,9 +137,8 @@ export function CikSearch() {
             <button
               key={result.id}
               type="button"
-              className={`flex w-full items-center justify-between px-3 py-2 text-left text-sm hover:bg-muted ${
-                index === highlightedIndex ? "bg-muted" : ""
-              }`}
+              className={`flex w-full items-center justify-between px-3 py-2 text-left text-sm hover:bg-muted ${index === highlightedIndex ? "bg-muted" : ""
+                }`}
               onMouseDown={(e) => {
                 e.preventDefault();
                 handleNavigate(result);
