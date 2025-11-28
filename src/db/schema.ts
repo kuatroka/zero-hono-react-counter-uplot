@@ -56,7 +56,7 @@ export const periods = pgTable("periods", {
 });
 
 export const cusipQuarterInvestorActivity = pgTable("cusip_quarter_investor_activity", {
-  id: bigint("id", { mode: "number" }), // No PK in original SQL?
+  id: bigint("id", { mode: "number" }).primaryKey(),
   cusip: varchar("cusip"),
   ticker: varchar("ticker"),
   quarter: varchar("quarter"),

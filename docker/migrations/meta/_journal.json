@@ -8,6 +8,13 @@
       "when": 1764288507084,
       "tag": "0000_melted_vivisector",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1764290709652,
+      "tag": "0001_large_selene",
+      "breakpoints": true
     }
   ]
 }
