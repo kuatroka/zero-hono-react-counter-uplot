@@ -139,7 +139,7 @@ export const queries = {
 
   assetsPage: syncedQuery(
     "assets.page",
-    z.tuple([z.number().int().min(1).max(1000), z.number().int().min(0)]),
+    z.tuple([z.number().int().min(1).max(50000), z.number().int().min(0)]),
     (limit, _offset) =>
       builder.assets
         .orderBy("assetName", "asc")
@@ -154,7 +154,7 @@ export const queries = {
 
   superinvestorsPage: syncedQuery(
     "superinvestors.page",
-    z.tuple([z.number().int().min(1).max(1000), z.number().int().min(0)]),
+    z.tuple([z.number().int().min(1).max(50000), z.number().int().min(0)]),
     (limit, _offset) =>
       builder.superinvestors
         .orderBy("cikName", "asc")

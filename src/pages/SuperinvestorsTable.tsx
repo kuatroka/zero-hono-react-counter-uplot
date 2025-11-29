@@ -16,8 +16,8 @@ export function SuperinvestorsTablePage({ onReady }: { onReady: () => void }) {
 
   const tablePageSize = 10;
   const DEFAULT_WINDOW_LIMIT = 1000;
-  const MAX_WINDOW_LIMIT = 1000;
-  const MARGIN_PAGES = 0;
+  const MAX_WINDOW_LIMIT = 50000; // Allow syncing up to 50k rows as user pages
+  const MARGIN_PAGES = 5; // Preload 5 pages ahead
 
   const rawPage = searchParams.get('page');
   const parsedPage = rawPage ? parseInt(rawPage, 10) : 1;
