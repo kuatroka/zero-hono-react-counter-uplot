@@ -29,10 +29,10 @@ export const userCounters = pgTable("user_counters", {
 
 export const searches = pgTable("searches", {
   id: bigint("id", { mode: "number" }).primaryKey(),
+  cusip: text("cusip"),
   code: text("code").notNull(),
   name: text("name"),
   category: text("category").notNull(),
-  cusip: text("cusip"),
 }, (table) => ({
   categoryCheck: check("searches_category_check", sql`${table.category} IN ('superinvestors', 'assets', 'periods')`),
 }));
@@ -47,9 +47,9 @@ export const superinvestors = pgTable("superinvestors", {
 
 export const assets = pgTable("assets", {
   id: bigint("id", { mode: "number" }).primaryKey(),
+  cusip: text("cusip"),
   asset: text("asset").notNull(),
   assetName: text("asset_name"),
-  cusip: text("cusip"),
 });
 
 export const periods = pgTable("periods", {
