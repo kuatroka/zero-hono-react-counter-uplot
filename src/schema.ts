@@ -86,6 +86,7 @@ const searches = table("searches")
     code: string(),
     name: string(),
     category: string(),
+    cusip: string(),
   })
   .primaryKey("id");
 
@@ -94,6 +95,7 @@ const asset = table("assets")
     id: number(),
     asset: string(),
     assetName: string().from("asset_name"),
+    cusip: string(),
   })
   .primaryKey("id");
 

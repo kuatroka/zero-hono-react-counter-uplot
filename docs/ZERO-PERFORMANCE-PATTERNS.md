@@ -45,18 +45,48 @@ When users search, results come from preloaded local data instantly. Server resu
 
 ### 3. Windowed Pagination
 
-Don't sync the entire table—use **windowed pagination** with a max limit:
+Don't sync the entire table—use **windowed pagination** with a moving window.
+
+Zero only syncs up to the `limit` you pass into a query. To support deep
+pagination (thousands of rows) without loading everything at once, grow the
+window as the user pages:
 
 ```typescript
-const DEFAULT_WINDOW_LIMIT = 1000;
-const MAX_WINDOW_LIMIT = 1000;
+const tablePageSize = 10;
+const DEFAULT_WINDOW_LIMIT = 1000;      // Fast initial load
+const MAX_WINDOW_LIMIT = 50000;         // Hard cap for synced rows
+const MARGIN_PAGES = 5;                 // Preload a few pages ahead
 
-// Only sync what's needed for current view + some margin
+const [windowLimit, setWindowLimit] = useState(() => {
+  const required = currentPage * tablePageSize;
+  const base = Math.max(DEFAULT_WINDOW_LIMIT, required + tablePageSize * MARGIN_PAGES);
+  return Math.min(base, MAX_WINDOW_LIMIT);
+});
+
+// Query only the current window from Zero
 const [assetsPageRows] = useQuery(
   queries.assetsPage(windowLimit, 0),
-  { ttl: '5m', enabled: !trimmedSearch }
+  { ttl: "5m", enabled: !trimmedSearch }
 );
+
+// When the user pages forward, expand the window if needed
+useEffect(() => {
+  if (trimmedSearch) return; // search mode ignores windowLimit
+  const required = currentPage * tablePageSize;
+  if (required > windowLimit) {
+    setWindowLimit(prev => {
+      const base = Math.max(prev, required + tablePageSize * MARGIN_PAGES);
+      return Math.min(base, MAX_WINDOW_LIMIT);
+    });
+  }
+}, [currentPage, windowLimit, trimmedSearch]);
 ```
+
+This pattern (inspired by ztunes) gives you:
+
+- **Fast cold start**: only ~1k rows synced initially
+- **Smooth browsing**: as users page deeper, Zero syncs more rows on demand
+- **Hard upper bound**: `MAX_WINDOW_LIMIT` protects memory and keeps sync work bounded
 
 ### 4. Jostle-Free Search UX
 

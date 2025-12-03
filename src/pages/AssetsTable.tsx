@@ -5,7 +5,7 @@ import { DataTable, ColumnDef } from '@/components/DataTable';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Asset, Schema, Search } from '@/schema';
 import { queries } from '@/zero/queries';
-import { preload } from '@/zero-preload';
+import { preload, PRELOAD_TTL, PRELOAD_LIMITS } from '@/zero-preload';
 
 const ASSETS_TOTAL_ROWS = 32000;
 
@@ -15,7 +15,7 @@ export function AssetsTablePage({ onReady }: { onReady: () => void }) {
   const [searchParams, setSearchParams] = useSearchParams();
 
   const tablePageSize = 10;
-  const DEFAULT_WINDOW_LIMIT = 1000;
+  const DEFAULT_WINDOW_LIMIT = PRELOAD_LIMITS.assetsTable;
   const MAX_WINDOW_LIMIT = 50000; // Allow syncing up to 50k rows as user pages
   const MARGIN_PAGES = 5; // Preload 5 pages ahead
 
@@ -71,7 +71,7 @@ export function AssetsTablePage({ onReady }: { onReady: () => void }) {
 
   const [assetsPageRows, assetsResult] = useQuery(
     queries.assetsPage(windowLimit, 0),
-    { ttl: '5m', enabled: !trimmedSearch }
+    { ttl: PRELOAD_TTL, enabled: !trimmedSearch }
   );
 
   const SEARCH_LIMIT = 200;
@@ -80,7 +80,7 @@ export function AssetsTablePage({ onReady }: { onReady: () => void }) {
     trimmedSearch
       ? queries.searchesByCategory('assets', trimmedSearch, SEARCH_LIMIT)
       : queries.searchesByCategory('assets', '', 0),
-    { ttl: '5m' }
+    { ttl: PRELOAD_TTL }
   );
 
   // Signal ready when data is available (from cache or server)
@@ -103,11 +103,13 @@ export function AssetsTablePage({ onReady }: { onReady: () => void }) {
     }
   }, [trimmedSearch, assetsPageRows, assetsResult.type, assetSearchRows, searchResult.type, onReady]);
 
-  const searchAssets: Asset[] | undefined = trimmedSearch
+  // Map search results to Asset-like objects, preserving cusip
+  const searchAssets: (Asset & { cusip?: string })[] | undefined = trimmedSearch
     ? assetSearchRows?.map((row: Search) => ({
       id: row.id,
       asset: row.code,
       assetName: row.name,
+      cusip: row.cusip,
     }))
     : undefined;
 
@@ -125,7 +127,7 @@ export function AssetsTablePage({ onReady }: { onReady: () => void }) {
   }, [currentPage, windowLimit, trimmedSearch]);
 
   useEffect(() => {
-    preload(z, { limit: DEFAULT_WINDOW_LIMIT });
+    preload(z);
   }, [z]);
 
   const handlePageChange = (newPage: number) => {
@@ -154,6 +156,12 @@ export function AssetsTablePage({ onReady }: { onReady: () => void }) {
     setSearchTerm(value);
   };
 
+  // Helper to build asset detail URL with cusip
+  const getAssetUrl = (row: Asset & { cusip?: string }) => {
+    const cusip = row.cusip || '_';
+    return `/assets/${encodeURIComponent(row.asset)}/${encodeURIComponent(cusip)}`;
+  };
+
   const columns: ColumnDef<Asset>[] = [
     {
       key: 'asset',
@@ -161,23 +169,34 @@ export function AssetsTablePage({ onReady }: { onReady: () => void }) {
       sortable: true,
       searchable: true,
       clickable: true,
-      render: (value, row, isFocused) => (
-        <a
-          href={`/assets/${row.asset}`}
-          onMouseEnter={() => {
-            z.preload(queries.assetBySymbol(row.asset), { ttl: '5m' });
-          }}
-          onClick={(e) => {
-            e.preventDefault();
-            rowSelectedRef.current = true;
-            z.preload(queries.assetBySymbol(row.asset), { ttl: '5m' });
-            navigate(`/assets/${encodeURIComponent(row.asset)}`);
-          }}
-          className={`hover:underline underline-offset-4 cursor-pointer text-foreground outline-none ${isFocused ? 'underline' : ''}`}
-        >
-          {String(value)}
-        </a>
-      ),
+      render: (value, row, isFocused) => {
+        const url = getAssetUrl(row);
+        return (
+          <a
+            href={url}
+            onMouseEnter={() => {
+              if (row.cusip) {
+                z.preload(queries.assetBySymbolAndCusip(row.asset, row.cusip), { ttl: PRELOAD_TTL });
+              } else {
+                z.preload(queries.assetBySymbol(row.asset), { ttl: PRELOAD_TTL });
+              }
+            }}
+            onClick={(e) => {
+              e.preventDefault();
+              rowSelectedRef.current = true;
+              if (row.cusip) {
+                z.preload(queries.assetBySymbolAndCusip(row.asset, row.cusip), { ttl: PRELOAD_TTL });
+              } else {
+                z.preload(queries.assetBySymbol(row.asset), { ttl: PRELOAD_TTL });
+              }
+              navigate(url);
+            }}
+            className={`hover:underline underline-offset-4 cursor-pointer text-foreground outline-none ${isFocused ? 'underline' : ''}`}
+          >
+            {String(value)}
+          </a>
+        );
+      },
     },
     {
       key: 'assetName',

@@ -1,5 +1,5 @@
 import { Link, useLocation } from 'react-router-dom';
-import { CikSearch } from './CikSearch';
+import { GlobalSearch } from './GlobalSearch';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 
 export function GlobalNav() {
@@ -19,7 +19,7 @@ export function GlobalNav() {
           </div>
           
           <div className="flex-1 flex justify-center max-w-md">
-            <CikSearch />
+            <GlobalSearch />
           </div>
           
           <div className="flex items-center gap-4 flex-shrink-0">

@@ -1022,18 +1022,42 @@ From ztunes: *"We want to provide instant results over local data, but we don't 
 - Smooth user experience without UI jumping
 
 **Windowed Pagination:**
-Don't sync the entire table—use windowed pagination with a max limit:
+Don't sync the entire table—use windowed pagination with a **growing window**.
+
+Zero only syncs up to the `limit` you pass into a query. For large tables, grow
+the window as the user pages instead of loading everything at once:
 
 ```typescript
-const DEFAULT_WINDOW_LIMIT = 1000;
-const MAX_WINDOW_LIMIT = 1000;
+const tablePageSize = 10;
+const DEFAULT_WINDOW_LIMIT = 1000;      // Fast initial load
+const MAX_WINDOW_LIMIT = 50000;         // Hard cap for synced rows
+const MARGIN_PAGES = 5;                 // Preload a few pages ahead
 
-// Only sync what's needed for current view + some margin
+const [windowLimit, setWindowLimit] = useState(() => {
+  const required = currentPage * tablePageSize;
+  const base = Math.max(DEFAULT_WINDOW_LIMIT, required + tablePageSize * MARGIN_PAGES);
+  return Math.min(base, MAX_WINDOW_LIMIT);
+});
+
 const [assetsPageRows] = useQuery(
   queries.assetsPage(windowLimit, 0),
   { ttl: '5m', enabled: !trimmedSearch }
 );
+
+useEffect(() => {
+  if (trimmedSearch) return; // search mode ignores windowLimit
+  const required = currentPage * tablePageSize;
+  if (required > windowLimit) {
+    setWindowLimit(prev => {
+      const base = Math.max(prev, required + tablePageSize * MARGIN_PAGES);
+      return Math.min(base, MAX_WINDOW_LIMIT);
+    });
+  }
+}, [currentPage, windowLimit, trimmedSearch]);
 ```
+
+This mirrors the ztunes pattern: small initial window, then expand as needed,
+with a hard upper bound to keep sync and memory usage under control.
 
 **Performance Note:**
 Zero currently lacks first-class text indexing. Searches can be O(n) when there are fewer matching records than the limit or sort order doesn't match an index. For ~32k assets and ~15k superinvestors, this is acceptable. For larger datasets, consider server-side search or wait for Zero's upcoming text indexing feature.

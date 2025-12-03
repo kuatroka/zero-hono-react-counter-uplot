@@ -94,12 +94,24 @@ export const queries = {
       }
       const pattern = `%${escapeLike(search)}%`;
       return base
-        .where(({ or, cmp }) =>
-          or(
-            cmp("name", "ILIKE", pattern),
-            cmp("code", "ILIKE", pattern)
-          )
-        )
+        .where("name", "ILIKE", pattern)
+        .limit(limit);
+    }
+  ),
+
+  // Separate query for code matches - prioritized in search
+  searchesByCode: syncedQuery(
+    "searches.byCodePattern",
+    z.tuple([z.string(), z.number().int().min(0).max(100)]),
+    (rawSearch, limit) => {
+      const search = rawSearch.trim();
+      const base = builder.searches.orderBy("code", "asc");
+      if (!search) {
+        return base.limit(limit);
+      }
+      const pattern = `%${escapeLike(search)}%`;
+      return base
+        .where("code", "ILIKE", pattern)
         .limit(limit);
     }
   ),
@@ -174,6 +186,32 @@ export const queries = {
       builder.cusip_quarter_investor_activity
         .where("ticker", "=", ticker)
         .orderBy("quarter", "asc")
+  ),
+
+  investorActivityByCusip: syncedQuery(
+    "investorActivity.byCusip",
+    z.tuple([z.string().min(1)]),
+    (cusip) =>
+      builder.cusip_quarter_investor_activity
+        .where("cusip", "=", cusip)
+        .orderBy("quarter", "asc")
+  ),
+
+  assetByCusip: syncedQuery(
+    "assets.byCusip",
+    z.tuple([z.string().min(1)]),
+    (cusip) =>
+      builder.assets.where("cusip", "=", cusip).limit(1)
+  ),
+
+  assetBySymbolAndCusip: syncedQuery(
+    "assets.bySymbolAndCusip",
+    z.tuple([z.string().min(1), z.string().min(1)]),
+    (symbol, cusip) =>
+      builder.assets
+        .where("asset", "=", symbol)
+        .where("cusip", "=", cusip)
+        .limit(1)
   ),
 } as const;
 

@@ -83,7 +83,7 @@ function AppContent() {
           <Route path="/messages" element={<MessagesPage onReady={onReady} />} />
           <Route path="/counter" element={<CounterPage onReady={onReady} />} />
           <Route path="/assets" element={<AssetsTablePage onReady={onReady} />} />
-          <Route path="/assets/:asset" element={<AssetDetailPage onReady={onReady} />} />
+          <Route path="/assets/:code/:cusip" element={<AssetDetailPage onReady={onReady} />} />
           <Route path="/superinvestors" element={<SuperinvestorsTablePage onReady={onReady} />} />
           <Route path="/superinvestors/:cik" element={<SuperinvestorDetailPage onReady={onReady} />} />
           <Route path="/profile" element={<UserProfile onReady={onReady} />} />

@@ -5,7 +5,7 @@ import { DataTable, ColumnDef } from '@/components/DataTable';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Superinvestor, Schema, Search } from '@/schema';
 import { queries } from '@/zero/queries';
-import { preload } from '@/zero-preload';
+import { preload, PRELOAD_TTL, PRELOAD_LIMITS } from '@/zero-preload';
 
 const SUPERINVESTORS_TOTAL_ROWS = 14908; // See REFRESH-PERSISTENCE-TEST.md / ZERO-PERSISTENCE-FIX-FINAL.md
 
@@ -15,7 +15,7 @@ export function SuperinvestorsTablePage({ onReady }: { onReady: () => void }) {
   const [searchParams, setSearchParams] = useSearchParams();
 
   const tablePageSize = 10;
-  const DEFAULT_WINDOW_LIMIT = 1000;
+  const DEFAULT_WINDOW_LIMIT = PRELOAD_LIMITS.superinvestorsTable;
   const MAX_WINDOW_LIMIT = 50000; // Allow syncing up to 50k rows as user pages
   const MARGIN_PAGES = 5; // Preload 5 pages ahead
 
@@ -71,7 +71,7 @@ export function SuperinvestorsTablePage({ onReady }: { onReady: () => void }) {
 
   const [superinvestorsPageRows, superinvestorsResult] = useQuery(
     queries.superinvestorsPage(windowLimit, 0),
-    { ttl: '5m', enabled: !trimmedSearch }
+    { ttl: PRELOAD_TTL, enabled: !trimmedSearch }
   );
 
   const SEARCH_LIMIT = 200;
@@ -80,7 +80,7 @@ export function SuperinvestorsTablePage({ onReady }: { onReady: () => void }) {
     trimmedSearch
       ? queries.searchesByCategory('superinvestors', trimmedSearch, SEARCH_LIMIT)
       : queries.searchesByCategory('superinvestors', '', 0),
-    { ttl: '5m' }
+    { ttl: PRELOAD_TTL }
   );
 
   // Signal ready when data is available (from cache or server)
@@ -127,7 +127,7 @@ export function SuperinvestorsTablePage({ onReady }: { onReady: () => void }) {
   }, [currentPage, windowLimit, trimmedSearch]);
 
   useEffect(() => {
-    preload(z, { limit: DEFAULT_WINDOW_LIMIT });
+    preload(z);
   }, [z]);
 
   const handlePageChange = (newPage: number) => {
@@ -167,12 +167,12 @@ export function SuperinvestorsTablePage({ onReady }: { onReady: () => void }) {
         <a
           href={`/superinvestors/${row.cik}`}
           onMouseEnter={() => {
-            z.preload(queries.superinvestorByCik(row.cik), { ttl: '5m' });
+            z.preload(queries.superinvestorByCik(row.cik), { ttl: PRELOAD_TTL });
           }}
           onClick={(e) => {
             e.preventDefault();
             rowSelectedRef.current = true;
-            z.preload(queries.superinvestorByCik(row.cik), { ttl: '5m' });
+            z.preload(queries.superinvestorByCik(row.cik), { ttl: PRELOAD_TTL });
             navigate(`/superinvestors/${encodeURIComponent(row.cik)}`);
           }}
           className={`hover:underline underline-offset-4 cursor-pointer text-foreground outline-none ${isFocused ? 'underline' : ''}`}

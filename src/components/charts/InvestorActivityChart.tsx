@@ -49,7 +49,7 @@ export function InvestorActivityChart({ data, ticker }: InvestorActivityChartPro
     return (
       <Card>
         <CardHeader>
-          <CardTitle>Investor Activity</CardTitle>
+          <CardTitle>Investor Activity (Recharts)</CardTitle>
           <CardDescription>No activity data available for {ticker}</CardDescription>
         </CardHeader>
       </Card>
@@ -65,7 +65,7 @@ export function InvestorActivityChart({ data, ticker }: InvestorActivityChartPro
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Investor Activity for {ticker}</CardTitle>
+        <CardTitle>Investor Activity for {ticker} (Recharts)</CardTitle>
         <CardDescription>
           Number of institutional investors opening (green) vs closing (red) positions by quarter
         </CardDescription>

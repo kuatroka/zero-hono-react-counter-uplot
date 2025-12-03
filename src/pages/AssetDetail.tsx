@@ -8,20 +8,39 @@ import { InvestorActivityNivoChart } from '@/components/charts/InvestorActivityN
 import { InvestorActivityEchartsChart } from '@/components/charts/InvestorActivityEchartsChart';
 
 export function AssetDetailPage({ onReady }: { onReady: () => void }) {
-  const { asset } = useParams();
+  const { code, cusip } = useParams();
+  
+  // Determine if we have a valid cusip (not "_" placeholder)
+  const hasCusip = cusip && cusip !== "_";
 
-  const [rows, result] = useQuery(
-    queries.assetBySymbol(asset || ''),
-    { enabled: Boolean(asset) }
+  // Query asset: prefer by symbol+cusip if cusip is available, otherwise by symbol only
+  const [rowsBySymbolAndCusip, resultBySymbolAndCusip] = useQuery(
+    queries.assetBySymbolAndCusip(code || '', cusip || ''),
+    { enabled: Boolean(code) && Boolean(hasCusip) }
   );
 
-  const [activityData] = useQuery(
-    queries.investorActivityByTicker(asset || ''),
-    { enabled: Boolean(asset) }
+  const [rowsBySymbol, resultBySymbol] = useQuery(
+    queries.assetBySymbol(code || ''),
+    { enabled: Boolean(code) && !hasCusip }
   );
 
+  // Use the appropriate result based on whether we have a cusip
+  const rows = hasCusip ? rowsBySymbolAndCusip : rowsBySymbol;
+  const result = hasCusip ? resultBySymbolAndCusip : resultBySymbol;
   const record = rows?.[0];
-  const activityRows = activityData ?? [];
+
+  // Query investor activity: prefer by cusip if available, otherwise by ticker
+  const [activityByCusip] = useQuery(
+    queries.investorActivityByCusip(cusip || ''),
+    { enabled: Boolean(hasCusip) }
+  );
+
+  const [activityByTicker] = useQuery(
+    queries.investorActivityByTicker(code || ''),
+    { enabled: Boolean(code) && !hasCusip }
+  );
+
+  const activityRows = hasCusip ? (activityByCusip ?? []) : (activityByTicker ?? []);
 
   // Signal ready when data is available (from cache or server)
   useEffect(() => {
@@ -30,7 +49,7 @@ export function AssetDetailPage({ onReady }: { onReady: () => void }) {
     }
   }, [record, result.type, onReady]);
 
-  if (!asset) return <div className="p-6">Missing asset id.</div>;
+  if (!code) return <div className="p-6">Missing asset code.</div>;
 
   if (record) {
     // We have data, render it immediately (even if still syncing)
@@ -50,6 +69,7 @@ export function AssetDetailPage({ onReady }: { onReady: () => void }) {
         </div>
         <div className="space-y-3 text-lg">
           <div><span className="font-semibold">Symbol:</span> {record.asset}</div>
+          {record.cusip && <div><span className="font-semibold">CUSIP:</span> {record.cusip}</div>}
           <div><span className="font-semibold">ID:</span> {record.id}</div>
         </div>
 

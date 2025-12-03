@@ -2,29 +2,37 @@ import { Zero } from "@rocicorp/zero";
 import { Schema } from "./schema";
 import { queries } from "./zero/queries";
 
+// Preload configuration
+export const PRELOAD_TTL = "5m";
+export const PRELOAD_LIMITS = {
+  assetsTable: 500,
+  superinvestorsTable: 500,
+  searchAssets: 500,      // Global search: assets category
+  searchSuperinvestors: 100, // Global search: superinvestors category
+} as const;
+
 /**
  * Preload strategy inspired by ztunes:
  * - Preload windowed page data for instant browsing
  * - Preload search index (`searches` table) for instant local search
  * - Use 5-minute TTL for instant re-navigation
+ *
+ * Note: searchesByCategory serves both global search and per-table search.
+ * No separate searchesByName preload needed – global search queries against
+ * the same cached `searches` rows.
  */
-export function preload(z: Zero<Schema>, { limit = 200 } = {}) {
-  const TTL = "5m"; // Same as ztunes - allows instant re-navigation
-
+export function preload(z: Zero<Schema>) {
   // Preload browsing data (windowed pagination)
-  z.preload(queries.assetsPage(limit, 0), { ttl: TTL });
-  z.preload(queries.superinvestorsPage(limit, 0), { ttl: TTL });
+  z.preload(queries.assetsPage(PRELOAD_LIMITS.assetsTable, 0), { ttl: PRELOAD_TTL });
+  z.preload(queries.superinvestorsPage(PRELOAD_LIMITS.superinvestorsTable, 0), { ttl: PRELOAD_TTL });
 
-  // Preload search index for instant local search
+  // Preload search index for instant local search (serves both global and per-table search)
   // Sorted alphabetically so local results are a valid prefix of full results
-  z.preload(queries.searchesByCategory("assets", "", 1000), { ttl: TTL });
-  z.preload(queries.searchesByCategory("superinvestors", "", 1000), { ttl: TTL });
-
-  // Preload global search index (both categories combined)
-  z.preload(queries.searchesByName("", 100), { ttl: TTL });
+  z.preload(queries.searchesByCategory("assets", "", PRELOAD_LIMITS.searchAssets), { ttl: PRELOAD_TTL });
+  z.preload(queries.searchesByCategory("superinvestors", "", PRELOAD_LIMITS.searchSuperinvestors), { ttl: PRELOAD_TTL });
 
   // Other reference data
-  z.preload(queries.listUsers(), { ttl: TTL });
-  z.preload(queries.listMediums(), { ttl: TTL });
+  z.preload(queries.listUsers(), { ttl: PRELOAD_TTL });
+  z.preload(queries.listMediums(), { ttl: PRELOAD_TTL });
 }
 

@@ -251,20 +251,29 @@ lsof -i :4848
 
 This project uses [Drizzle ORM](https://orm.drizzle.team/) for schema management.
 
-**1. Modify Schema**
-Edit `src/db/schema.ts` to add/change tables.
+**1. Modify Schema**  
+Edit `src/db/schema.ts` (Drizzle) and `src/schema.ts` (Zero client schema) to add/change tables or columns.
 
-**2. Generate Migration**
+**2. Generate Migration**  
 Create SQL migration files from your schema changes:
 ```bash
 bun run db:generate
 ```
 
-**3. Apply Migration**
-Apply changes to the running database (without data loss):
+**3. Apply Migration (Zero-downtime)**  
+Apply changes to the running PostgreSQL database:
 ```bash
 bun run db:migrate
 ```
+
+This uses `ALTER TABLE` statements that are safe to run while the app, Zero cache, and UI are online. Existing data is preserved.
+
+**4. Refresh Zero cache schema (recommended)**  
+When you add new tables/columns that Zero should sync:
+- If running `bun run dev` (concurrently), stop and restart it, or
+- If running `bun run dev:zero-cache` separately, restart just the Zero cache process.
+
+On restart, Zero introspects the updated PostgreSQL schema and begins syncing the new tables/columns you defined in `src/schema.ts`.
 
 ## Performance Benchmarking
 
