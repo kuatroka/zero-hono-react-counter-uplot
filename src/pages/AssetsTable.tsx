@@ -6,6 +6,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Asset, Schema, Search } from '@/schema';
 import { queries } from '@/zero/queries';
 import { preload, PRELOAD_TTL, PRELOAD_LIMITS } from '@/zero-preload';
+import { useContentReady } from '@/hooks/useContentReady';
 
 const ASSETS_TOTAL_ROWS = 32000;
 
@@ -13,6 +14,7 @@ export function AssetsTablePage() {
   const z = useZero<Schema>();
   const navigate = useNavigate();
   const searchParams = useSearch({ strict: false }) as { page?: string; search?: string };
+  const { onReady } = useContentReady();
 
   const tablePageSize = 10;
   const DEFAULT_WINDOW_LIMIT = PRELOAD_LIMITS.assetsTable;
@@ -89,6 +91,23 @@ export function AssetsTablePage() {
     : undefined;
 
   const assets = trimmedSearch ? searchAssets || [] : assetsPageRows || [];
+
+  // Signal ready when data is available (from cache or server)
+  const readyCalledRef = useRef(false);
+  useEffect(() => {
+    if (readyCalledRef.current) return;
+    if (trimmedSearch) {
+      if ((assetSearchRows && assetSearchRows.length > 0) || searchResult.type === 'complete') {
+        readyCalledRef.current = true;
+        onReady();
+      }
+    } else {
+      if ((assetsPageRows && assetsPageRows.length > 0) || assetsResult.type === 'complete') {
+        readyCalledRef.current = true;
+        onReady();
+      }
+    }
+  }, [trimmedSearch, assetsPageRows, assetsResult.type, assetSearchRows, searchResult.type, onReady]);
 
   useEffect(() => {
     if (trimmedSearch) return; // search mode ignores windowLimit

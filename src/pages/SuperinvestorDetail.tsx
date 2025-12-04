@@ -1,9 +1,12 @@
+import { useEffect, useRef } from 'react';
 import { useParams, Link } from '@tanstack/react-router';
 import { useQuery } from '@rocicorp/zero/react';
 import { queries } from '@/zero/queries';
+import { useContentReady } from '@/hooks/useContentReady';
 
 export function SuperinvestorDetailPage() {
   const { cik } = useParams({ strict: false }) as { cik?: string };
+  const { onReady } = useContentReady();
 
   const [rows, result] = useQuery(
     queries.superinvestorByCik(cik || ''),
@@ -11,6 +14,16 @@ export function SuperinvestorDetailPage() {
   );
 
   const record = rows?.[0];
+
+  // Signal ready when data is available (from cache or server)
+  const readyCalledRef = useRef(false);
+  useEffect(() => {
+    if (readyCalledRef.current) return;
+    if (record || result.type === 'complete') {
+      readyCalledRef.current = true;
+      onReady();
+    }
+  }, [record, result.type, onReady]);
 
   if (!cik) return <div className="p-6">Missing CIK.</div>;
 

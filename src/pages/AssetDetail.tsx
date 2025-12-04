@@ -1,5 +1,6 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { useParams, Link } from '@tanstack/react-router';
+import { useContentReady } from '@/hooks/useContentReady';
 import { useQuery } from '@rocicorp/zero/react';
 import { queries } from '@/zero/queries';
 import { InvestorActivityChart } from '@/components/charts/InvestorActivityChart';
@@ -9,6 +10,7 @@ import { InvestorActivityEchartsChart } from '@/components/charts/InvestorActivi
 
 export function AssetDetailPage() {
   const { code, cusip } = useParams({ strict: false }) as { code?: string; cusip?: string };
+  const { onReady } = useContentReady();
   
   // Determine if we have a valid cusip (not "_" placeholder)
   const hasCusip = cusip && cusip !== "_";
@@ -42,6 +44,15 @@ export function AssetDetailPage() {
 
   const activityRows = hasCusip ? (activityByCusip ?? []) : (activityByTicker ?? []);
 
+  // Signal ready when data is available (from cache or server)
+  const readyCalledRef = useRef(false);
+  useEffect(() => {
+    if (readyCalledRef.current) return;
+    if (record || result.type === 'complete') {
+      readyCalledRef.current = true;
+      onReady();
+    }
+  }, [record, result.type, onReady]);
   
   if (!code) return <div className="p-6">Missing asset code.</div>;
 

@@ -6,6 +6,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Superinvestor, Schema, Search } from '@/schema';
 import { queries } from '@/zero/queries';
 import { preload, PRELOAD_TTL, PRELOAD_LIMITS } from '@/zero-preload';
+import { useContentReady } from '@/hooks/useContentReady';
 
 const SUPERINVESTORS_TOTAL_ROWS = 14908; // See REFRESH-PERSISTENCE-TEST.md / ZERO-PERSISTENCE-FIX-FINAL.md
 
@@ -13,6 +14,7 @@ export function SuperinvestorsTablePage() {
   const z = useZero<Schema>();
   const navigate = useNavigate();
   const searchParams = useSearch({ strict: false }) as { page?: string; search?: string };
+  const { onReady } = useContentReady();
 
   const tablePageSize = 10;
   const DEFAULT_WINDOW_LIMIT = PRELOAD_LIMITS.superinvestorsTable;
@@ -89,6 +91,23 @@ export function SuperinvestorsTablePage() {
     : undefined;
 
   const superinvestors = trimmedSearch ? searchSuperinvestors || [] : superinvestorsPageRows || [];
+
+  // Signal ready when data is available (from cache or server)
+  const readyCalledRef = useRef(false);
+  useEffect(() => {
+    if (readyCalledRef.current) return;
+    if (trimmedSearch) {
+      if ((superinvestorSearchRows && superinvestorSearchRows.length > 0) || searchResult.type === 'complete') {
+        readyCalledRef.current = true;
+        onReady();
+      }
+    } else {
+      if ((superinvestorsPageRows && superinvestorsPageRows.length > 0) || superinvestorsResult.type === 'complete') {
+        readyCalledRef.current = true;
+        onReady();
+      }
+    }
+  }, [trimmedSearch, superinvestorsPageRows, superinvestorsResult.type, superinvestorSearchRows, searchResult.type, onReady]);
 
   useEffect(() => {
     if (trimmedSearch) return; // search mode ignores windowLimit
