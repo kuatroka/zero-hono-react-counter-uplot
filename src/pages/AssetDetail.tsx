@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { useParams, Link } from 'react-router-dom';
+import { useParams, Link } from '@tanstack/react-router';
 import { useQuery } from '@rocicorp/zero/react';
 import { queries } from '@/zero/queries';
 import { InvestorActivityChart } from '@/components/charts/InvestorActivityChart';
@@ -7,8 +7,8 @@ import { InvestorActivityUplotChart } from '@/components/charts/InvestorActivity
 import { InvestorActivityNivoChart } from '@/components/charts/InvestorActivityNivoChart';
 import { InvestorActivityEchartsChart } from '@/components/charts/InvestorActivityEchartsChart';
 
-export function AssetDetailPage({ onReady }: { onReady: () => void }) {
-  const { code, cusip } = useParams();
+export function AssetDetailPage() {
+  const { code, cusip } = useParams({ strict: false }) as { code?: string; cusip?: string };
   
   // Determine if we have a valid cusip (not "_" placeholder)
   const hasCusip = cusip && cusip !== "_";
@@ -42,13 +42,7 @@ export function AssetDetailPage({ onReady }: { onReady: () => void }) {
 
   const activityRows = hasCusip ? (activityByCusip ?? []) : (activityByTicker ?? []);
 
-  // Signal ready when data is available (from cache or server)
-  useEffect(() => {
-    if (record || result.type === 'complete') {
-      onReady();
-    }
-  }, [record, result.type, onReady]);
-
+  
   if (!code) return <div className="p-6">Missing asset code.</div>;
 
   if (record) {
@@ -74,7 +68,7 @@ export function AssetDetailPage({ onReady }: { onReady: () => void }) {
         </div>
 
         <div className="mt-6">
-          <Link to="/assets" className="link link-primary">Back to assets</Link>
+          <Link to="/assets" search={{}} className="link link-primary">Back to assets</Link>
         </div>
       </div>
 

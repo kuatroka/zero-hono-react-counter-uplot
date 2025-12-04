@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useQuery, useZero } from '@rocicorp/zero/react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useNavigate, useSearch } from '@tanstack/react-router';
 import { DataTable, ColumnDef } from '@/components/DataTable';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Asset, Schema, Search } from '@/schema';
@@ -9,21 +9,21 @@ import { preload, PRELOAD_TTL, PRELOAD_LIMITS } from '@/zero-preload';
 
 const ASSETS_TOTAL_ROWS = 32000;
 
-export function AssetsTablePage({ onReady }: { onReady: () => void }) {
+export function AssetsTablePage() {
   const z = useZero<Schema>();
   const navigate = useNavigate();
-  const [searchParams, setSearchParams] = useSearchParams();
+  const searchParams = useSearch({ strict: false }) as { page?: string; search?: string };
 
   const tablePageSize = 10;
   const DEFAULT_WINDOW_LIMIT = PRELOAD_LIMITS.assetsTable;
   const MAX_WINDOW_LIMIT = 50000; // Allow syncing up to 50k rows as user pages
   const MARGIN_PAGES = 5; // Preload 5 pages ahead
 
-  const rawPage = searchParams.get('page');
+  const rawPage = searchParams.page;
   const parsedPage = rawPage ? parseInt(rawPage, 10) : 1;
   const currentPage = Number.isNaN(parsedPage) || parsedPage < 1 ? 1 : parsedPage;
 
-  const searchParam = searchParams.get('search') ?? '';
+  const searchParam = searchParams.search ?? '';
   const [searchTerm, setSearchTerm] = useState(searchParam);
   const isTypingRef = useRef(false);
   const rowSelectedRef = useRef(false);
@@ -39,11 +39,7 @@ export function AssetsTablePage({ onReady }: { onReady: () => void }) {
   // Clear search term on mount if no row was selected (page refresh scenario)
   useEffect(() => {
     if (searchParam && !rowSelectedRef.current) {
-      // Clear the search param on refresh if no row was selected
-      const params = new URLSearchParams(searchParams);
-      params.delete('search');
-      params.set('page', '1');
-      setSearchParams(params, { replace: true });
+      navigate({ search: { page: '1' }, replace: true });
       setSearchTerm('');
     }
   }, []); // Run only on mount
@@ -52,16 +48,14 @@ export function AssetsTablePage({ onReady }: { onReady: () => void }) {
 
   // Sync URL with searchTerm state changes
   useEffect(() => {
-    if (!isTypingRef.current) return; // Only update URL when user is typing
-
-    const params = new URLSearchParams();
-    params.set('page', '1');
+    if (!isTypingRef.current) return;
+    const newSearch: { page: string; search?: string } = { page: '1' };
     if (searchTerm.trim()) {
-      params.set('search', searchTerm);
+      newSearch.search = searchTerm;
     }
-    setSearchParams(params);
+    navigate({ search: newSearch });
     isTypingRef.current = false;
-  }, [searchTerm, setSearchParams]);
+  }, [searchTerm, navigate]);
 
   const [windowLimit, setWindowLimit] = useState(() => {
     const required = currentPage * tablePageSize;
@@ -83,26 +77,7 @@ export function AssetsTablePage({ onReady }: { onReady: () => void }) {
     { ttl: PRELOAD_TTL }
   );
 
-  // Signal ready when data is available (from cache or server)
-  const readyCalledRef = useRef(false);
-  useEffect(() => {
-    if (readyCalledRef.current) return; // Only call onReady once
-
-    if (trimmedSearch) {
-      // In search mode: ready when search results arrive (has data or query complete)
-      if ((assetSearchRows && assetSearchRows.length > 0) || searchResult.type === 'complete') {
-        readyCalledRef.current = true;
-        onReady();
-      }
-    } else {
-      // In browse mode: ready when page results arrive
-      if ((assetsPageRows && assetsPageRows.length > 0) || assetsResult.type === 'complete') {
-        readyCalledRef.current = true;
-        onReady();
-      }
-    }
-  }, [trimmedSearch, assetsPageRows, assetsResult.type, assetSearchRows, searchResult.type, onReady]);
-
+  
   // Map search results to Asset-like objects, preserving cusip
   const searchAssets: (Asset & { cusip?: string })[] | undefined = trimmedSearch
     ? assetSearchRows?.map((row: Search) => ({
@@ -131,12 +106,11 @@ export function AssetsTablePage({ onReady }: { onReady: () => void }) {
   }, [z]);
 
   const handlePageChange = (newPage: number) => {
-    const params = new URLSearchParams(searchParams);
-    params.set('page', String(newPage));
+    const newSearch: { page: string; search?: string } = { page: String(newPage) };
     if (trimmedSearch) {
-      params.set('search', trimmedSearch);
+      newSearch.search = trimmedSearch;
     }
-    setSearchParams(params);
+    navigate({ search: newSearch });
 
     if (trimmedSearch) {
       return; // pagination over search results is handled client-side only
@@ -189,7 +163,7 @@ export function AssetsTablePage({ onReady }: { onReady: () => void }) {
               } else {
                 z.preload(queries.assetBySymbol(row.asset), { ttl: PRELOAD_TTL });
               }
-              navigate(url);
+              navigate({ to: url });
             }}
             className={`hover:underline underline-offset-4 cursor-pointer text-foreground outline-none ${isFocused ? 'underline' : ''}`}
           >

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useNavigate, useSearchParams } from "react-router-dom";
+import { useNavigate, useSearch } from "@tanstack/react-router";
 import { useQuery } from "@rocicorp/zero/react";
 import { queries } from "@/zero/queries";
 import { PRELOAD_TTL } from "@/zero-preload";
@@ -7,8 +7,8 @@ import { Input } from "@/components/ui/input";
 
 export function GlobalSearch() {
   const navigate = useNavigate();
-  const [searchParams, setSearchParams] = useSearchParams();
-  const queryParam = searchParams.get("q") ?? "";
+  const searchParams = useSearch({ strict: false }) as { q?: string };
+  const queryParam = searchParams.q ?? "";
   const [query, setQuery] = useState(queryParam);
   const [isOpen, setIsOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -91,10 +91,7 @@ export function GlobalSearch() {
   // Clear search term on mount if no result was selected (page refresh scenario)
   useEffect(() => {
     if (queryParam && !resultSelectedRef.current) {
-      // Clear the query param on refresh if no result was selected
-      const params = new URLSearchParams(searchParams);
-      params.delete("q");
-      setSearchParams(params, { replace: true });
+      navigate({ search: {}, replace: true });
       setQuery("");
     }
   }, []); // Run only on mount
@@ -115,17 +112,14 @@ export function GlobalSearch() {
 
   // Sync URL with query state changes
   useEffect(() => {
-    if (!isTypingRef.current) return; // Only update URL when user is typing
-
-    const params = new URLSearchParams(searchParams);
+    if (!isTypingRef.current) return;
     if (query.trim()) {
-      params.set("q", query);
+      navigate({ search: { q: query } });
     } else {
-      params.delete("q");
+      navigate({ search: {} });
     }
-    setSearchParams(params);
     isTypingRef.current = false;
-  }, [query, searchParams, setSearchParams]);
+  }, [query, navigate]);
 
   useEffect(() => {
     setIsOpen(shouldSearch && !!results && results.length > 0);
@@ -145,17 +139,12 @@ export function GlobalSearch() {
     resultSelectedRef.current = true;
     setIsOpen(false);
     setQuery("");
-    // Clear the query parameter when navigating
-    const params = new URLSearchParams(searchParams);
-    params.delete("q");
-    setSearchParams(params);
 
     if (result.category === "superinvestors") {
-      navigate(`/superinvestors/${encodeURIComponent(result.code)}`);
+      navigate({ to: `/superinvestors/${encodeURIComponent(result.code)}` });
     } else if (result.category === "assets") {
-      // Include cusip in the URL for assets to handle multiple cusips per ticker
       const cusip = result.cusip || "_";
-      navigate(`/assets/${encodeURIComponent(result.code)}/${encodeURIComponent(cusip)}`);
+      navigate({ to: `/assets/${encodeURIComponent(result.code)}/${encodeURIComponent(cusip)}` });
     }
   };
 

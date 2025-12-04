@@ -1,10 +1,9 @@
-import { useEffect } from 'react';
-import { useParams, Link } from 'react-router-dom';
+import { useParams, Link } from '@tanstack/react-router';
 import { useQuery } from '@rocicorp/zero/react';
 import { queries } from '@/zero/queries';
 
-export function SuperinvestorDetailPage({ onReady }: { onReady: () => void }) {
-  const { cik } = useParams();
+export function SuperinvestorDetailPage() {
+  const { cik } = useParams({ strict: false }) as { cik?: string };
 
   const [rows, result] = useQuery(
     queries.superinvestorByCik(cik || ''),
@@ -12,13 +11,6 @@ export function SuperinvestorDetailPage({ onReady }: { onReady: () => void }) {
   );
 
   const record = rows?.[0];
-
-  // Signal ready when data is available (from cache or server)
-  useEffect(() => {
-    if (record || result.type === 'complete') {
-      onReady();
-    }
-  }, [record, result.type, onReady]);
 
   if (!cik) return <div className="p-6">Missing CIK.</div>;
 
@@ -44,7 +36,7 @@ export function SuperinvestorDetailPage({ onReady }: { onReady: () => void }) {
         <div><span className="font-semibold">ID:</span> {record.id}</div>
       </div>
       <div className="mt-6">
-        <Link to="/superinvestors" className="link link-primary">Back to superinvestors</Link>
+        <Link to="/superinvestors" search={{}} className="link link-primary">Back to superinvestors</Link>
       </div>
     </div>
   );
