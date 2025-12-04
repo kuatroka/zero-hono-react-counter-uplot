@@ -1,8 +1,8 @@
-import { useEffect, useRef } from 'react';
 import { useParams, Link } from '@tanstack/react-router';
 import { useQuery } from '@rocicorp/zero/react';
 import { queries } from '@/zero/queries';
 import { useContentReady } from '@/hooks/useContentReady';
+import { useEffect, useRef } from 'react';
 
 export function SuperinvestorDetailPage() {
   const { cik } = useParams({ strict: false }) as { cik?: string };
@@ -10,7 +10,7 @@ export function SuperinvestorDetailPage() {
 
   const [rows, result] = useQuery(
     queries.superinvestorByCik(cik || ''),
-    { enabled: Boolean(cik) }
+    { enabled: Boolean(cik), ttl: '5m' }
   );
 
   const record = rows?.[0];
@@ -18,7 +18,8 @@ export function SuperinvestorDetailPage() {
   // Signal ready when data is available (from cache or server)
   const readyCalledRef = useRef(false);
   useEffect(() => {
-    if (readyCalledRef.current) return;
+    if (readyCalledRef.current) return; // Only call onReady once
+    
     if (record || result.type === 'complete') {
       readyCalledRef.current = true;
       onReady();

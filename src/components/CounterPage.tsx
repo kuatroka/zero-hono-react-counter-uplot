@@ -1,4 +1,4 @@
-import { Link } from "react-router-dom";
+import { Link } from "../../app/components/link";
 import { useQuery, useZero } from "@rocicorp/zero/react";
 import { useEffect, useState } from "react";
 import { queries } from "../zero/queries";
@@ -8,9 +8,11 @@ import { ThemeSwitcher } from "./ThemeSwitcher";
 import { Schema } from "../schema";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { useContentReady } from "@/hooks/useContentReady";
 
-export function CounterPage({ onReady }: { onReady: () => void }) {
+export function CounterPage() {
   const z = useZero<Schema>();
+  const { onReady } = useContentReady();
   const isLoggedIn = z.userID !== "anon";
   const userCounterKey = isLoggedIn ? z.userID : "__guest__";
   const [guestCounter, setGuestCounter] = useState(0);

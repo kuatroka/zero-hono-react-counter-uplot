@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useQuery, useZero } from '@rocicorp/zero/react';
-import { useNavigate, useSearch } from '@tanstack/react-router';
+import { Link, useNavigate, useSearch } from '@tanstack/react-router';
 import { DataTable, ColumnDef } from '@/components/DataTable';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Asset, Schema, Search } from '@/schema';
@@ -15,7 +15,6 @@ export function AssetsTablePage() {
   const navigate = useNavigate();
   const searchParams = useSearch({ strict: false }) as { page?: string; search?: string };
   const { onReady } = useContentReady();
-
   const tablePageSize = 10;
   const DEFAULT_WINDOW_LIMIT = PRELOAD_LIMITS.assetsTable;
   const MAX_WINDOW_LIMIT = 50000; // Allow syncing up to 50k rows as user pages
@@ -41,7 +40,7 @@ export function AssetsTablePage() {
   // Clear search term on mount if no row was selected (page refresh scenario)
   useEffect(() => {
     if (searchParam && !rowSelectedRef.current) {
-      navigate({ search: { page: '1' }, replace: true });
+      navigate({ to: '/assets', search: { page: '1', search: undefined }, replace: true });
       setSearchTerm('');
     }
   }, []); // Run only on mount
@@ -51,11 +50,10 @@ export function AssetsTablePage() {
   // Sync URL with searchTerm state changes
   useEffect(() => {
     if (!isTypingRef.current) return;
-    const newSearch: { page: string; search?: string } = { page: '1' };
-    if (searchTerm.trim()) {
-      newSearch.search = searchTerm;
-    }
-    navigate({ search: newSearch });
+    navigate({
+      to: '/assets',
+      search: { page: '1', search: searchTerm.trim() || undefined },
+    });
     isTypingRef.current = false;
   }, [searchTerm, navigate]);
 
@@ -65,14 +63,14 @@ export function AssetsTablePage() {
     return Math.min(base, MAX_WINDOW_LIMIT);
   });
 
-  const [assetsPageRows, assetsResult] = useQuery(
+  const [assetsPageRows] = useQuery(
     queries.assetsPage(windowLimit, 0),
     { ttl: PRELOAD_TTL, enabled: !trimmedSearch }
   );
 
   const SEARCH_LIMIT = 200;
 
-  const [assetSearchRows, searchResult] = useQuery(
+  const [assetSearchRows] = useQuery(
     trimmedSearch
       ? queries.searchesByCategory('assets', trimmedSearch, SEARCH_LIMIT)
       : queries.searchesByCategory('assets', '', 0),
@@ -81,12 +79,12 @@ export function AssetsTablePage() {
 
   
   // Map search results to Asset-like objects, preserving cusip
-  const searchAssets: (Asset & { cusip?: string })[] | undefined = trimmedSearch
+  const searchAssets: Asset[] | undefined = trimmedSearch
     ? assetSearchRows?.map((row: Search) => ({
       id: row.id,
       asset: row.code,
       assetName: row.name,
-      cusip: row.cusip,
+      cusip: row.cusip ?? null,
     }))
     : undefined;
 
@@ -95,19 +93,22 @@ export function AssetsTablePage() {
   // Signal ready when data is available (from cache or server)
   const readyCalledRef = useRef(false);
   useEffect(() => {
-    if (readyCalledRef.current) return;
+    if (readyCalledRef.current) return; // Only call onReady once
+
     if (trimmedSearch) {
-      if ((assetSearchRows && assetSearchRows.length > 0) || searchResult.type === 'complete') {
+      // In search mode: ready when search results arrive
+      if ((assetSearchRows && assetSearchRows.length > 0) || assetSearchRows !== undefined) {
         readyCalledRef.current = true;
         onReady();
       }
     } else {
-      if ((assetsPageRows && assetsPageRows.length > 0) || assetsResult.type === 'complete') {
+      // In browse mode: ready when page results arrive
+      if ((assetsPageRows && assetsPageRows.length > 0) || assetsPageRows !== undefined) {
         readyCalledRef.current = true;
         onReady();
       }
     }
-  }, [trimmedSearch, assetsPageRows, assetsResult.type, assetSearchRows, searchResult.type, onReady]);
+  }, [trimmedSearch, assetsPageRows, assetSearchRows, onReady]);
 
   useEffect(() => {
     if (trimmedSearch) return; // search mode ignores windowLimit
@@ -125,11 +126,10 @@ export function AssetsTablePage() {
   }, [z]);
 
   const handlePageChange = (newPage: number) => {
-    const newSearch: { page: string; search?: string } = { page: String(newPage) };
-    if (trimmedSearch) {
-      newSearch.search = trimmedSearch;
-    }
-    navigate({ search: newSearch });
+    navigate({
+      to: '/assets',
+      search: { page: String(newPage), search: trimmedSearch || undefined },
+    });
 
     if (trimmedSearch) {
       return; // pagination over search results is handled client-side only
@@ -149,11 +149,7 @@ export function AssetsTablePage() {
     setSearchTerm(value);
   };
 
-  // Helper to build asset detail URL with cusip
-  const getAssetUrl = (row: Asset & { cusip?: string }) => {
-    const cusip = row.cusip || '_';
-    return `/assets/${encodeURIComponent(row.asset)}/${encodeURIComponent(cusip)}`;
-  };
+  // Helper removed: using route params API on Link
 
   const columns: ColumnDef<Asset>[] = [
     {
@@ -163,31 +159,39 @@ export function AssetsTablePage() {
       searchable: true,
       clickable: true,
       render: (value, row, isFocused) => {
-        const url = getAssetUrl(row);
         return (
-          <a
-            href={url}
+          <Link
+            to="/assets/$code/$cusip"
+            params={{ code: row.asset, cusip: row.cusip ?? '_' }}
             onMouseEnter={() => {
+              // Preload asset record
               if (row.cusip) {
                 z.preload(queries.assetBySymbolAndCusip(row.asset, row.cusip), { ttl: PRELOAD_TTL });
+                // Preload investor activity for charts
+                z.preload(queries.investorActivityByCusip(row.cusip), { ttl: PRELOAD_TTL });
               } else {
                 z.preload(queries.assetBySymbol(row.asset), { ttl: PRELOAD_TTL });
+                // Preload investor activity for charts
+                z.preload(queries.investorActivityByTicker(row.asset), { ttl: PRELOAD_TTL });
               }
             }}
-            onClick={(e) => {
-              e.preventDefault();
+            onMouseDown={() => {
               rowSelectedRef.current = true;
+              // Preload asset record
               if (row.cusip) {
                 z.preload(queries.assetBySymbolAndCusip(row.asset, row.cusip), { ttl: PRELOAD_TTL });
+                // Preload investor activity for charts
+                z.preload(queries.investorActivityByCusip(row.cusip), { ttl: PRELOAD_TTL });
               } else {
                 z.preload(queries.assetBySymbol(row.asset), { ttl: PRELOAD_TTL });
+                // Preload investor activity for charts
+                z.preload(queries.investorActivityByTicker(row.asset), { ttl: PRELOAD_TTL });
               }
-              navigate({ to: url });
             }}
             className={`hover:underline underline-offset-4 cursor-pointer text-foreground outline-none ${isFocused ? 'underline' : ''}`}
           >
             {String(value)}
-          </a>
+          </Link>
         );
       },
     },

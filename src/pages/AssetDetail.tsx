@@ -1,12 +1,12 @@
-import { useEffect, useRef } from 'react';
 import { useParams, Link } from '@tanstack/react-router';
-import { useContentReady } from '@/hooks/useContentReady';
 import { useQuery } from '@rocicorp/zero/react';
 import { queries } from '@/zero/queries';
 import { InvestorActivityChart } from '@/components/charts/InvestorActivityChart';
 import { InvestorActivityUplotChart } from '@/components/charts/InvestorActivityUplotChart';
 import { InvestorActivityNivoChart } from '@/components/charts/InvestorActivityNivoChart';
 import { InvestorActivityEchartsChart } from '@/components/charts/InvestorActivityEchartsChart';
+import { useContentReady } from '@/hooks/useContentReady';
+import { useEffect, useRef } from 'react';
 
 export function AssetDetailPage() {
   const { code, cusip } = useParams({ strict: false }) as { code?: string; cusip?: string };
@@ -18,12 +18,12 @@ export function AssetDetailPage() {
   // Query asset: prefer by symbol+cusip if cusip is available, otherwise by symbol only
   const [rowsBySymbolAndCusip, resultBySymbolAndCusip] = useQuery(
     queries.assetBySymbolAndCusip(code || '', cusip || ''),
-    { enabled: Boolean(code) && Boolean(hasCusip) }
+    { enabled: Boolean(code) && Boolean(hasCusip), ttl: '5m' }
   );
 
   const [rowsBySymbol, resultBySymbol] = useQuery(
     queries.assetBySymbol(code || ''),
-    { enabled: Boolean(code) && !hasCusip }
+    { enabled: Boolean(code) && !hasCusip, ttl: '5m' }
   );
 
   // Use the appropriate result based on whether we have a cusip
@@ -31,29 +31,32 @@ export function AssetDetailPage() {
   const result = hasCusip ? resultBySymbolAndCusip : resultBySymbol;
   const record = rows?.[0];
 
-  // Query investor activity: prefer by cusip if available, otherwise by ticker
-  const [activityByCusip] = useQuery(
-    queries.investorActivityByCusip(cusip || ''),
-    { enabled: Boolean(hasCusip) }
-  );
-
-  const [activityByTicker] = useQuery(
-    queries.investorActivityByTicker(code || ''),
-    { enabled: Boolean(code) && !hasCusip }
-  );
-
-  const activityRows = hasCusip ? (activityByCusip ?? []) : (activityByTicker ?? []);
-
-  // Signal ready when data is available (from cache or server)
+  // Signal ready immediately when asset record is available (don't wait for charts)
   const readyCalledRef = useRef(false);
   useEffect(() => {
-    if (readyCalledRef.current) return;
+    if (readyCalledRef.current) return; // Only call onReady once
+    
     if (record || result.type === 'complete') {
       readyCalledRef.current = true;
       onReady();
     }
   }, [record, result.type, onReady]);
-  
+
+  // Query investor activity: prefer by cusip if available, otherwise by ticker
+  const [activityByCusip, activityByCusipResult] = useQuery(
+    queries.investorActivityByCusip(cusip || ''),
+    { enabled: Boolean(hasCusip), ttl: '5m' }
+  );
+
+  const [activityByTicker, activityByTickerResult] = useQuery(
+    queries.investorActivityByTicker(code || ''),
+    { enabled: Boolean(code) && !hasCusip, ttl: '5m' }
+  );
+
+  const activityRows = hasCusip ? (activityByCusip ?? []) : (activityByTicker ?? []);
+  const activityResult = hasCusip ? activityByCusipResult : activityByTickerResult;
+  const isActivityLoading = activityResult?.type === 'unknown';
+
   if (!code) return <div className="p-6">Missing asset code.</div>;
 
   if (record) {
@@ -85,10 +88,22 @@ export function AssetDetailPage() {
 
       {/* Full-width chart section */}
       <div className="mt-8 space-y-10 w-screen relative left-1/2 right-1/2 -ml-[50vw] -mr-[50vw] px-4 sm:px-6 lg:px-8">
-        <InvestorActivityChart data={activityRows} ticker={record.asset} />
-        <InvestorActivityUplotChart data={activityRows} ticker={record.asset} />
-        <InvestorActivityNivoChart data={activityRows} ticker={record.asset} />
-        <InvestorActivityEchartsChart data={activityRows} ticker={record.asset} />
+        {isActivityLoading ? (
+          <div className="text-center py-12 text-muted-foreground">
+            Loading investor activity charts...
+          </div>
+        ) : activityRows.length === 0 ? (
+          <div className="text-center py-12 text-muted-foreground">
+            No investor activity data available for this asset.
+          </div>
+        ) : (
+          <>
+            <InvestorActivityChart data={activityRows} ticker={record.asset} />
+            <InvestorActivityUplotChart data={activityRows} ticker={record.asset} />
+            <InvestorActivityNivoChart data={activityRows} ticker={record.asset} />
+            <InvestorActivityEchartsChart data={activityRows} ticker={record.asset} />
+          </>
+        )}
       </div>
     </>
   );

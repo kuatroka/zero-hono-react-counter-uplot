@@ -1,7 +1,7 @@
-# UI Flash Fix: Visibility Pattern from zbugs
+# UI Flash Fix: Visibility Pattern for TanStack Router
 
 ## Problem
-When clicking browser refresh, the entire UI would flash/disappear briefly before reappearing with data. This happened even though:
+When clicking browser refresh or navigating between pages, the entire UI would flash/disappear briefly before reappearing with data. This happened even though:
 - Search terms were preserved in URL
 - Zero cached data in IndexedDB
 - Data loaded quickly from cache
@@ -9,58 +9,136 @@ When clicking browser refresh, the entire UI would flash/disappear briefly befor
 ## Root Cause
 The app rendered immediately with empty state, then re-rendered when data arrived from cache. This caused a visible "flash" of empty/loading UI.
 
-## Solution: zbugs `visibility: hidden` Pattern
+## Solution: Content Ready Pattern with TanStack Router
 
-Inspired by the zbugs reference app, we implemented a pattern that hides the entire app until content is ready:
+We implemented a visibility pattern using React Context that works seamlessly with TanStack Router's navigation system:
 
-### 1. App Root Level (`main.tsx`)
+### 1. Content Ready Hook (`src/hooks/useContentReady.tsx`)
+
 ```typescript
-function AppContent() {
-  const z = useZero<Schema>();
-  initZero(z);
+import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import { useRouterState } from '@tanstack/react-router';
 
-  // Prevent UI flash on refresh: hide until content is ready
-  const [contentReady, setContentReady] = useState(false);
-  const onReady = () => setContentReady(true);
+type ContentReadyContextValue = {
+  isReady: boolean;
+  onReady: () => void;
+};
+
+const ContentReadyContext = createContext<ContentReadyContextValue | null>(null);
+
+export function ContentReadyProvider({ children }: { children: React.ReactNode }) {
+  const locationKey = useRouterState({ select: (s) => s.location.state?.key ?? s.location.pathname });
+  const [isReady, setIsReady] = useState(false);
+
+  // Reset isReady on every navigation
+  useEffect(() => {
+    setIsReady(false);
+  }, [locationKey]);
+
+  const onReady = useCallback(() => setIsReady(true), []);
+  const value = useMemo(() => ({ isReady, onReady }), [isReady, onReady]);
 
   return (
-    <BrowserRouter>
-      <div style={{ visibility: contentReady ? 'visible' : 'hidden' }}>
-        <GlobalNav />
-        <Routes>
-          <Route path="/" element={<HomePage onReady={onReady} />} />
-          <Route path="/assets" element={<AssetsTablePage onReady={onReady} />} />
-          {/* ... other routes */}
-        </Routes>
-      </div>
-    </BrowserRouter>
+    <ContentReadyContext.Provider value={value}>
+      {children}
+    </ContentReadyContext.Provider>
+  );
+}
+
+export function useContentReady() {
+  const ctx = useContext(ContentReadyContext);
+  if (!ctx) {
+    throw new Error('useContentReady must be used within ContentReadyProvider');
+  }
+  return ctx;
+}
+```
+
+**Key points:**
+- Provider tracks `isReady` state and provides `onReady` callback
+- Automatically resets `isReady` to `false` on every navigation (using TanStack Router's location key)
+- Pages call `onReady()` when their data is loaded
+
+### 2. Layout Wrapper (`app/routes/_layout/route.tsx`)
+
+```typescript
+import { ContentReadyProvider } from "@/hooks/useContentReady";
+
+function RouteComponent() {
+  return (
+    <ZeroInit>
+      <ContentReadyProvider>
+        <SiteLayout>
+          <Outlet />
+        </SiteLayout>
+      </ContentReadyProvider>
+    </ZeroInit>
+  );
+}
+```
+
+**Key points:**
+- Wrap the layout with `ContentReadyProvider`
+- Provider is inside `ZeroInit` so Zero is available
+- Provider wraps `SiteLayout` so visibility can be controlled
+
+### 3. Site Layout (`app/components/site-layout.tsx`)
+
+```typescript
+import { useContentReady } from "@/hooks/useContentReady";
+
+export function SiteLayout({ children }: { children: React.ReactNode }) {
+  const { isReady } = useContentReady();
+
+  return (
+    <div style={{ visibility: isReady ? 'visible' : 'hidden' }}>
+      <GlobalNav />
+      {children}
+    </div>
   );
 }
 ```
 
 **Key points:**
 - Use `visibility: hidden` (not `display: none`) to maintain layout
-- Container is hidden until `contentReady` is true
-- Each page receives `onReady` callback
+- Container is hidden until `isReady` is true
+- GlobalNav and page content are both hidden until ready
 
-### 2. Page Components Signal When Ready
+### 4. Page Components Signal When Ready
 
-Each page calls `onReady()` when data is available:
+Each page uses the `useContentReady` hook and calls `onReady()` when data is available:
 
 **Data-driven pages** (AssetsTable, SuperinvestorsTable):
 ```typescript
-export function AssetsTablePage({ onReady }: { onReady: () => void }) {
-  const [assetsPageRows, assetsResult] = useQuery(
+import { useContentReady } from '@/hooks/useContentReady';
+
+export function AssetsTablePage() {
+  const { onReady } = useContentReady();
+  
+  const [assetsPageRows] = useQuery(
     queries.assetsPage(windowLimit, 0),
-    { ttl: '5m', enabled: !trimmedSearch }
+    { ttl: PRELOAD_TTL, enabled: !trimmedSearch }
   );
+
+  const [assetSearchRows] = useQuery(
+    trimmedSearch
+      ? queries.searchesByCategory('assets', trimmedSearch, SEARCH_LIMIT)
+      : queries.searchesByCategory('assets', '', 0),
+    { ttl: PRELOAD_TTL }
+  );
+
+  const assets = trimmedSearch ? searchAssets || [] : assetsPageRows || [];
 
   // Signal ready when data is available (from cache or server)
   useEffect(() => {
-    if (assetsPageRows && assetsPageRows.length > 0 || assetsResult.type === 'complete') {
+    if (assets && assets.length > 0) {
+      onReady();
+    } else if (!trimmedSearch && assetsPageRows !== undefined) {
+      onReady();
+    } else if (trimmedSearch && assetSearchRows !== undefined) {
       onReady();
     }
-  }, [assetsPageRows, assetsResult.type, onReady]);
+  }, [assets, assetsPageRows, assetSearchRows, trimmedSearch, onReady]);
   
   // ... rest of component
 }
@@ -68,10 +146,14 @@ export function AssetsTablePage({ onReady }: { onReady: () => void }) {
 
 **Detail pages** (AssetDetail, SuperinvestorDetail):
 ```typescript
-export function AssetDetailPage({ onReady }: { onReady: () => void }) {
+import { useContentReady } from '@/hooks/useContentReady';
+
+export function AssetDetailPage() {
+  const { onReady } = useContentReady();
+  
   const [rows, result] = useQuery(
-    queries.assetBySymbol(asset || ''),
-    { enabled: Boolean(asset) }
+    queries.assetBySymbol(code || ''),
+    { enabled: Boolean(code) }
   );
 
   const record = rows?.[0];
@@ -87,27 +169,13 @@ export function AssetDetailPage({ onReady }: { onReady: () => void }) {
 }
 ```
 
-**Data-driven page** (CounterPage):
+**Static pages** (Home, UserProfile):
 ```typescript
-export function CounterPage({ onReady }: { onReady: () => void }) {
-  const [counterRows, counterResult] = useQuery(queries.counterCurrent("main"));
-  const [quarters, quartersResult] = useQuery(queries.quartersSeries());
+import { useContentReady } from '@/hooks/useContentReady';
 
-  // Signal ready when data is available (from cache or server)
-  useEffect(() => {
-    if (counterRows && counterRows.length > 0 && quarters && quarters.length > 0 || 
-        (counterResult.type === 'complete' && quartersResult.type === 'complete')) {
-      onReady();
-    }
-  }, [counterRows, quarters, counterResult.type, quartersResult.type, onReady]);
-  
-  // ... rest of component
-}
-```
+export function Home() {
+  const { onReady } = useContentReady();
 
-**Static page** (UserProfile):
-```typescript
-export function UserProfile({ onReady }: { onReady: () => void }) {
   // Signal ready immediately for static page
   useEffect(() => {
     onReady();
@@ -120,28 +188,39 @@ export function UserProfile({ onReady }: { onReady: () => void }) {
 ## How It Works
 
 ### On Initial Load:
-1. App renders with `visibility: hidden`
+1. Layout renders with `visibility: hidden`
 2. Zero loads data from IndexedDB cache
 3. Page component receives cached data
 4. Page calls `onReady()`
-5. App becomes visible with data already rendered
+5. Layout becomes visible with data already rendered
+
+### On Navigation:
+1. TanStack Router navigates to new route
+2. `ContentReadyProvider` detects location change and resets `isReady` to `false`
+3. Layout becomes hidden (`visibility: hidden`)
+4. New page component mounts and loads data from cache
+5. Page calls `onReady()`
+6. Layout becomes visible with new page data (no flash!)
 
 ### On Refresh:
-1. App renders with `visibility: hidden` (user sees blank page briefly)
+1. Layout renders with `visibility: hidden` (user sees blank page briefly)
 2. Zero immediately loads from IndexedDB cache (< 50ms)
 3. Page component receives cached data
 4. Page calls `onReady()`
-5. App becomes visible with data (no flash!)
+5. Layout becomes visible with data (no flash!)
 
-## Key Differences from Previous Approach
+## Key Differences from React Router Implementation
 
-**Before:**
-- Rendered loading state → data arrives → re-render
-- User saw: Empty UI → Loading spinner → Data (flash)
+**React Router (Old):**
+- Used local state in `main.tsx` with `onReady` prop drilling
+- Manual reset of `contentReady` state on route changes
+- Props passed to every route component
 
-**After:**
-- Hidden → data arrives → render with data → show
-- User sees: Brief blank → Data (no flash)
+**TanStack Router (New):**
+- Uses React Context with `ContentReadyProvider`
+- Automatic reset on navigation using `useRouterState`
+- Pages use `useContentReady()` hook (no prop drilling)
+- Cleaner, more maintainable architecture
 
 ## Why `visibility: hidden` vs `display: none`?
 
@@ -153,53 +232,37 @@ Using `visibility` ensures:
 - No layout shift when transitioning
 - Smoother visual experience
 
-## Inspiration: zbugs Reference App
-
-This pattern is used in the official Zero reference app `zbugs`:
-
-**`apps/zbugs/src/root.tsx`:**
-```typescript
-export function Root() {
-  const [contentReady, setContentReady] = useState(false);
-
-  return (
-    <div style={{visibility: contentReady ? 'visible' : 'hidden'}}>
-      <Route path="/">
-        <ListPage onReady={() => setContentReady(true)} />
-      </Route>
-    </div>
-  );
-}
-```
-
-**`apps/zbugs/src/pages/list/list-page.tsx`:**
-```typescript
-export function ListPage({onReady}: {onReady: () => void}) {
-  const [issues, issuesResult] = useQuery(q);
-
-  useEffect(() => {
-    if (issues.length > 0 || issuesResult.type === 'complete') {
-      onReady();
-    }
-  }, [issues.length, issuesResult.type, onReady]);
-  
-  // ...
-}
-```
-
 ## Files Modified
 
-- `src/main.tsx` - Added contentReady state and visibility wrapper
-- `src/pages/AssetsTable.tsx` - Added onReady prop and signal
-- `src/pages/SuperinvestorsTable.tsx` - Added onReady prop and signal
-- `src/pages/AssetDetail.tsx` - Added onReady prop and signal
-- `src/pages/SuperinvestorDetail.tsx` - Added onReady prop and signal
-- `src/components/CounterPage.tsx` - Added onReady prop (immediate)
-- `src/pages/UserProfile.tsx` - Added onReady prop (immediate)
+### Core Infrastructure
+- `src/hooks/useContentReady.tsx` - Created provider and hook for content ready state
+- `app/routes/_layout/route.tsx` - Wrapped layout with ContentReadyProvider
+- `app/components/site-layout.tsx` - Applied visibility gate using isReady state
+
+### Page Components
+- `app/routes/_layout/index.tsx` - Added useContentReady hook and onReady signal
+- `src/pages/AssetsTable.tsx` - Added useContentReady hook and data-ready signal
+- `src/pages/SuperinvestorsTable.tsx` - Added useContentReady hook and data-ready signal
+- `src/pages/AssetDetail.tsx` - Added useContentReady hook and data-ready signal
+- `src/pages/SuperinvestorDetail.tsx` - Added useContentReady hook and data-ready signal
+- `src/components/CounterPage.tsx` - Updated to use useContentReady hook (removed prop)
+- `src/pages/UserProfile.tsx` - Updated to use useContentReady hook (removed prop)
 
 ## Result
 
-✅ No UI flash on page refresh
-✅ Search terms preserved in URL
-✅ Data loads instantly from cache
-✅ Smooth user experience
+✅ No UI flash on page refresh  
+✅ No UI flash on navigation between pages  
+✅ Search terms preserved in URL  
+✅ Data loads instantly from cache  
+✅ Smooth user experience  
+✅ Works seamlessly with TanStack Router  
+✅ Cleaner architecture with React Context (no prop drilling)  
+
+## Migration Notes
+
+When migrating from React Router to TanStack Router:
+1. The visibility pattern must be reimplemented using React Context
+2. Use `useRouterState` to detect navigation and reset ready state
+3. Replace prop drilling with `useContentReady()` hook
+4. Wrap layout with `ContentReadyProvider` inside the `_layout` route
+5. Apply visibility gate in the layout component, not at the root level

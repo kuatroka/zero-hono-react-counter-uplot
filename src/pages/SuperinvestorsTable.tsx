@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useQuery, useZero } from '@rocicorp/zero/react';
-import { useNavigate, useSearch } from '@tanstack/react-router';
+import { Link, useNavigate, useSearch } from '@tanstack/react-router';
 import { DataTable, ColumnDef } from '@/components/DataTable';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Superinvestor, Schema, Search } from '@/schema';
@@ -15,7 +15,6 @@ export function SuperinvestorsTablePage() {
   const navigate = useNavigate();
   const searchParams = useSearch({ strict: false }) as { page?: string; search?: string };
   const { onReady } = useContentReady();
-
   const tablePageSize = 10;
   const DEFAULT_WINDOW_LIMIT = PRELOAD_LIMITS.superinvestorsTable;
   const MAX_WINDOW_LIMIT = 50000; // Allow syncing up to 50k rows as user pages
@@ -41,7 +40,7 @@ export function SuperinvestorsTablePage() {
   // Clear search term on mount if no row was selected (page refresh scenario)
   useEffect(() => {
     if (searchParam && !rowSelectedRef.current) {
-      navigate({ search: { page: '1' }, replace: true });
+      navigate({ to: '/superinvestors', search: { page: '1', search: undefined }, replace: true });
       setSearchTerm('');
     }
   }, []); // Run only on mount
@@ -51,11 +50,10 @@ export function SuperinvestorsTablePage() {
   // Sync URL with searchTerm state changes
   useEffect(() => {
     if (!isTypingRef.current) return;
-    const newSearch: { page: string; search?: string } = { page: '1' };
-    if (searchTerm.trim()) {
-      newSearch.search = searchTerm;
-    }
-    navigate({ search: newSearch });
+    navigate({
+      to: '/superinvestors',
+      search: { page: '1', search: searchTerm.trim() || undefined },
+    });
     isTypingRef.current = false;
   }, [searchTerm, navigate]);
 
@@ -65,14 +63,14 @@ export function SuperinvestorsTablePage() {
     return Math.min(base, MAX_WINDOW_LIMIT);
   });
 
-  const [superinvestorsPageRows, superinvestorsResult] = useQuery(
+  const [superinvestorsPageRows] = useQuery(
     queries.superinvestorsPage(windowLimit, 0),
     { ttl: PRELOAD_TTL, enabled: !trimmedSearch }
   );
 
   const SEARCH_LIMIT = 200;
 
-  const [superinvestorSearchRows, searchResult] = useQuery(
+  const [superinvestorSearchRows] = useQuery(
     trimmedSearch
       ? queries.searchesByCategory('superinvestors', trimmedSearch, SEARCH_LIMIT)
       : queries.searchesByCategory('superinvestors', '', 0),
@@ -95,19 +93,22 @@ export function SuperinvestorsTablePage() {
   // Signal ready when data is available (from cache or server)
   const readyCalledRef = useRef(false);
   useEffect(() => {
-    if (readyCalledRef.current) return;
+    if (readyCalledRef.current) return; // Only call onReady once
+
     if (trimmedSearch) {
-      if ((superinvestorSearchRows && superinvestorSearchRows.length > 0) || searchResult.type === 'complete') {
+      // In search mode: ready when search results arrive
+      if ((superinvestorSearchRows && superinvestorSearchRows.length > 0) || superinvestorSearchRows !== undefined) {
         readyCalledRef.current = true;
         onReady();
       }
     } else {
-      if ((superinvestorsPageRows && superinvestorsPageRows.length > 0) || superinvestorsResult.type === 'complete') {
+      // In browse mode: ready when page results arrive
+      if ((superinvestorsPageRows && superinvestorsPageRows.length > 0) || superinvestorsPageRows !== undefined) {
         readyCalledRef.current = true;
         onReady();
       }
     }
-  }, [trimmedSearch, superinvestorsPageRows, superinvestorsResult.type, superinvestorSearchRows, searchResult.type, onReady]);
+  }, [trimmedSearch, superinvestorsPageRows, superinvestorSearchRows, onReady]);
 
   useEffect(() => {
     if (trimmedSearch) return; // search mode ignores windowLimit
@@ -125,11 +126,10 @@ export function SuperinvestorsTablePage() {
   }, [z]);
 
   const handlePageChange = (newPage: number) => {
-    const newSearch: { page: string; search?: string } = { page: String(newPage) };
-    if (trimmedSearch) {
-      newSearch.search = trimmedSearch;
-    }
-    navigate({ search: newSearch });
+    navigate({
+      to: '/superinvestors',
+      search: { page: String(newPage), search: trimmedSearch || undefined },
+    });
 
     if (trimmedSearch) {
       return; // pagination over search results is handled client-side only
@@ -157,21 +157,20 @@ export function SuperinvestorsTablePage() {
       searchable: true,
       clickable: true,
       render: (value, row, isFocused) => (
-        <a
-          href={`/superinvestors/${row.cik}`}
+        <Link
+          to="/superinvestors/$cik"
+          params={{ cik: row.cik }}
           onMouseEnter={() => {
             z.preload(queries.superinvestorByCik(row.cik), { ttl: PRELOAD_TTL });
           }}
-          onClick={(e) => {
-            e.preventDefault();
+          onMouseDown={() => {
             rowSelectedRef.current = true;
             z.preload(queries.superinvestorByCik(row.cik), { ttl: PRELOAD_TTL });
-            navigate({ to: `/superinvestors/${encodeURIComponent(row.cik)}` });
           }}
           className={`hover:underline underline-offset-4 cursor-pointer text-foreground outline-none ${isFocused ? 'underline' : ''}`}
         >
           {String(value)}
-        </a>
+        </Link>
       ),
     },
     {

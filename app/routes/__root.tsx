@@ -1,12 +1,7 @@
 // app/routes/__root.tsx
-import type { ReactNode } from "react";
-import {
-  Outlet,
-  createRootRouteWithContext,
-  HeadContent,
-  Scripts,
-} from "@tanstack/react-router";
+import { Outlet, createRootRouteWithContext } from "@tanstack/react-router";
 import type { RouterContext } from "../router";
+import { ContentReadyProvider } from "@/hooks/useContentReady";
 import "@/index.css";
 
 const serverURL = import.meta.env.VITE_PUBLIC_SERVER ?? "http://localhost:4848";
@@ -27,22 +22,8 @@ export const Route = createRootRouteWithContext<RouterContext>()({
 
 function RootComponent() {
   return (
-    <RootDocument>
+    <ContentReadyProvider>
       <Outlet />
-    </RootDocument>
-  );
-}
-
-function RootDocument({ children }: Readonly<{ children: ReactNode }>) {
-  return (
-    <html>
-      <head>
-        <HeadContent />
-      </head>
-      <body>
-        {children}
-        <Scripts />
-      </body>
-    </html>
+    </ContentReadyProvider>
   );
 }

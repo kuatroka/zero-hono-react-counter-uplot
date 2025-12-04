@@ -1,11 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useSearch } from "@tanstack/react-router";
-import { useQuery } from "@rocicorp/zero/react";
+import { useQuery, useZero } from "@rocicorp/zero/react";
 import { queries } from "@/zero/queries";
 import { PRELOAD_TTL } from "@/zero-preload";
 import { Input } from "@/components/ui/input";
+import { Schema } from "@/schema";
 
 export function GlobalSearch() {
+  const z = useZero<Schema>();
   const navigate = useNavigate();
   const searchParams = useSearch({ strict: false }) as { q?: string };
   const queryParam = searchParams.q ?? "";
@@ -135,10 +137,27 @@ export function GlobalSearch() {
     setQuery(value);
   };
 
+  const preloadResult = (result: any) => {
+    if (result.category === "superinvestors") {
+      z.preload(queries.superinvestorByCik(result.code), { ttl: PRELOAD_TTL });
+    } else if (result.category === "assets") {
+      if (result.cusip) {
+        z.preload(queries.assetBySymbolAndCusip(result.code, result.cusip), { ttl: PRELOAD_TTL });
+        z.preload(queries.investorActivityByCusip(result.cusip), { ttl: PRELOAD_TTL });
+      } else {
+        z.preload(queries.assetBySymbol(result.code), { ttl: PRELOAD_TTL });
+        z.preload(queries.investorActivityByTicker(result.code), { ttl: PRELOAD_TTL });
+      }
+    }
+  };
+
   const handleNavigate = (result: any) => {
     resultSelectedRef.current = true;
     setIsOpen(false);
     setQuery("");
+
+    // Preload before navigation
+    preloadResult(result);
 
     if (result.category === "superinvestors") {
       navigate({ to: `/superinvestors/${encodeURIComponent(result.code)}` });
@@ -202,6 +221,8 @@ export function GlobalSearch() {
               }}
               onMouseEnter={() => {
                 setHighlightedIndex(index);
+                // Preload on hover for instant navigation
+                preloadResult(result);
               }}
             >
               <div className="flex flex-col truncate mr-2">

@@ -1,11 +1,11 @@
 import { Zero } from "@rocicorp/zero";
 import { ZeroProvider } from "@rocicorp/zero/react";
 import { schema, Schema } from "@/zero/schema";
-import { useMemo } from "react";
+import { useEffect, useMemo } from "react";
 import { useRouter } from "@tanstack/react-router";
 import Cookies from "js-cookie";
 import { decodeJwt } from "jose";
-import { queries } from "@/zero/queries";
+import { preload } from "@/zero-preload";
 
 const serverURL = import.meta.env.VITE_PUBLIC_SERVER ?? "http://localhost:4848";
 
@@ -24,15 +24,32 @@ function getStableUserID(): string {
   return anonID;
 }
 
+function getStableStorageKey(): string {
+  const STORAGE_KEY = "zero_storage_key_v2";
+  let storageKey = localStorage.getItem(STORAGE_KEY);
+  if (!storageKey) {
+    storageKey = "main-v2";
+    localStorage.setItem(STORAGE_KEY, storageKey);
+  }
+  return storageKey;
+}
+
 export function ZeroInit({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const userID = getStableUserID();
 
   const opts = useMemo(() => {
+    const auth = Cookies.get("jwt");
+    const storageKey = getStableStorageKey();
+    const getQueriesURL = "http://localhost:4000/api/zero/get-queries";
+
     return {
       schema,
       userID,
+      auth,
       server: serverURL,
+      storageKey,
+      getQueriesURL,
       init: (zero: Zero<Schema>) => {
         router.update({
           context: {
@@ -49,15 +66,16 @@ export function ZeroInit({ children }: { children: React.ReactNode }) {
     };
   }, [userID, router]);
 
+  useEffect(() => {
+    (async () => {
+      try {
+        if (navigator.storage?.persist) {
+          const persisted = await navigator.storage.persisted();
+          if (!persisted) await navigator.storage.persist();
+        }
+      } catch {}
+    })();
+  }, []);
+
   return <ZeroProvider {...opts}>{children}</ZeroProvider>;
-}
-
-function preload(z: Zero<Schema>) {
-  // Preload browsing data immediately (windowed pagination)
-  z.preload(queries.assetsPage(500, 0), { ttl: "5m" });
-  z.preload(queries.superinvestorsPage(500, 0), { ttl: "5m" });
-
-  // Preload search index for instant local search
-  z.preload(queries.searchesByCategory("assets", "", 500), { ttl: "5m" });
-  z.preload(queries.searchesByCategory("superinvestors", "", 100), { ttl: "5m" });
 }
