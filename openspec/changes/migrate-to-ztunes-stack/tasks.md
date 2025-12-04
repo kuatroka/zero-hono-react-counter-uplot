@@ -1,19 +1,19 @@
 ## 1. Phase 1: Schema Automation (drizzle-zero)
 
-- [ ] 1.1 Install drizzle-zero as dev dependency
-- [ ] 1.2 Add `generate-zero-schema` script to package.json
-- [ ] 1.3 Run drizzle-zero to generate `src/zero/schema.gen.ts`
-- [ ] 1.4 Create `src/zero/schema.ts` that imports and re-exports from schema.gen.ts
-- [ ] 1.5 Update `src/schema.ts` to import schema from `src/zero/schema.ts`
-- [ ] 1.6 Verify all existing Zero queries still work
-- [ ] 1.7 Remove manual table definitions from `src/schema.ts`
-- [ ] 1.8 Update AGENTS.md with new schema generation workflow
+- [x] 1.1 Install drizzle-zero as dev dependency
+- [x] 1.2 Add `generate-zero-schema` script to package.json
+- [x] 1.3 Run drizzle-zero to generate `src/zero/schema.gen.ts`
+- [x] 1.4 Create `src/zero/schema.ts` that imports and re-exports from schema.gen.ts
+- [x] 1.5 Update `src/schema.ts` to import schema from `src/zero/schema.ts`
+- [x] 1.6 Verify all existing Zero queries still work
+- [x] 1.7 Remove manual table definitions from `src/schema.ts`
+- [x] 1.8 Update AGENTS.md with new schema generation workflow
 
 ## 2. Phase 2: TanStack Router Migration
 
-- [ ] 2.1 Install @tanstack/react-router and @tanstack/react-start
-- [ ] 2.2 Install @tanstack/router-plugin for Vite
-- [ ] 2.3 Update vite.config.ts with TanStack Start plugin (SPA mode)
+- [x] 2.1 Install @tanstack/react-router and @tanstack/react-start
+- [x] 2.2 Install @tanstack/router-plugin for Vite
+- [x] 2.3 Update vite.config.ts with TanStack Start plugin (SPA mode)
 - [ ] 2.4 Create `app/router.tsx` with router configuration and Zero context
 - [ ] 2.5 Create `app/routes/__root.tsx` with RootDocument component
 - [ ] 2.6 Create `app/components/ZeroInit.tsx` wrapper component

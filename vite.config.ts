@@ -1,6 +1,7 @@
 import { defineConfig } from "vite";
 import dotenv from "dotenv";
 import path from "path";
+import viteReact from "@vitejs/plugin-react";
 
 if (process.env.NODE_ENV === "development") {
   dotenv.config();
@@ -25,6 +26,6 @@ export default defineConfig({
     },
   },
   plugins: [
- 
+    viteReact(),
   ],
 });

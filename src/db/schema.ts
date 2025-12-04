@@ -1,6 +1,48 @@
-import { pgTable, text, doublePrecision, varchar, decimal, timestamp, uuid, bigint, check } from "drizzle-orm/pg-core";
-import { sql } from "drizzle-orm";
+import { pgTable, text, doublePrecision, varchar, decimal, timestamp, uuid, bigint, check, boolean, jsonb } from "drizzle-orm/pg-core";
+import { sql, relations } from "drizzle-orm";
 
+// Zero messaging tables (used for demo/messaging feature)
+export const user = pgTable("user", {
+  id: text("id").primaryKey(),
+  name: text("name").notNull(),
+  partner: boolean("partner").notNull().default(false),
+});
+
+export const medium = pgTable("medium", {
+  id: text("id").primaryKey(),
+  name: text("name").notNull(),
+});
+
+export const message = pgTable("message", {
+  id: text("id").primaryKey(),
+  senderId: text("sender_id").notNull().references(() => user.id),
+  mediumId: text("medium_id").notNull().references(() => medium.id),
+  body: text("body").notNull(),
+  labels: jsonb("labels").$type<string[]>(),
+  timestamp: bigint("timestamp", { mode: "number" }).notNull(),
+});
+
+// Relations for drizzle-zero
+export const messageRelations = relations(message, ({ one }) => ({
+  sender: one(user, {
+    fields: [message.senderId],
+    references: [user.id],
+  }),
+  medium: one(medium, {
+    fields: [message.mediumId],
+    references: [medium.id],
+  }),
+}));
+
+export const userRelations = relations(user, ({ many }) => ({
+  messages: many(message),
+}));
+
+export const mediumRelations = relations(medium, ({ many }) => ({
+  messages: many(message),
+}));
+
+// Application tables
 export const counters = pgTable("counters", {
   id: text("id").primaryKey(),
   value: doublePrecision("value").notNull(),

@@ -20,7 +20,7 @@ export const queries = {
         .orderBy("timestamp", "desc");
 
       if (senderId) {
-        query = query.where("senderID", "=", senderId);
+        query = query.where("senderId", "=", senderId);
       }
 
       if (search) {
@@ -54,7 +54,7 @@ export const queries = {
     z.tuple([z.string(), z.number().int().min(0).max(50)]),
     (rawSearch, limit) => {
       const search = rawSearch.trim();
-      const base = builder.entities.orderBy("created_at", "desc");
+      const base = builder.entities.orderBy("createdAt", "desc");
       if (!search) {
         return base.limit(limit);
       }
@@ -66,7 +66,7 @@ export const queries = {
   recentEntities: syncedQuery(
     "entities.recent",
     z.tuple([z.number().int().positive().max(500)]),
-    (limit) => builder.entities.orderBy("created_at", "desc").limit(limit)
+    (limit) => builder.entities.orderBy("createdAt", "desc").limit(limit)
   ),
   counterCurrent: syncedQuery(
     "counter.current",
@@ -76,12 +76,12 @@ export const queries = {
   quartersSeries: syncedQuery(
     "quarters.series",
     z.tuple([]),
-    () => builder.value_quarters.orderBy("quarter", "asc")
+    () => builder.valueQuarters.orderBy("quarter", "asc")
   ),
   userCounter: syncedQuery(
     "user_counter.current",
     z.tuple([z.string()]),
-    (userId) => builder.user_counters.where("userId", "=", userId).limit(1)
+    (userId) => builder.userCounters.where("userId", "=", userId).limit(1)
   ),
   searchesByName: syncedQuery(
     "searches.byName",
@@ -183,7 +183,7 @@ export const queries = {
     "investorActivity.byTicker",
     z.tuple([z.string().min(1)]),
     (ticker) =>
-      builder.cusip_quarter_investor_activity
+      builder.cusipQuarterInvestorActivity
         .where("ticker", "=", ticker)
         .orderBy("quarter", "asc")
   ),
@@ -192,7 +192,7 @@ export const queries = {
     "investorActivity.byCusip",
     z.tuple([z.string().min(1)]),
     (cusip) =>
-      builder.cusip_quarter_investor_activity
+      builder.cusipQuarterInvestorActivity
         .where("cusip", "=", cusip)
         .orderBy("quarter", "asc")
   ),
