@@ -27,6 +27,7 @@ services:
       - ./migrations/05_add_user_counters.sql:/docker-entrypoint-initdb.d/06-migration-user-counters.sql:ro
       - ./migrations/06_add_searches.sql:/docker-entrypoint-initdb.d/07-migration-searches.sql:ro
       - ./migrations/07_add_superinvestors_assets_periods.sql:/docker-entrypoint-initdb.d/08-migration-superinvestors.sql:ro
+      - ./migrations/08_add_drilldown_function.sql:/docker-entrypoint-initdb.d/09-drilldown-function.sql:ro
 
 volumes:
   zstart_pgdata:

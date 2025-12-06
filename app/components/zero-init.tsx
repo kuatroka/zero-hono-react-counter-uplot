@@ -1,11 +1,22 @@
 import { Zero } from "@rocicorp/zero";
 import { ZeroProvider } from "@rocicorp/zero/react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { schema, Schema } from "@/zero/schema";
 import { useEffect, useMemo } from "react";
 import { useRouter } from "@tanstack/react-router";
 import Cookies from "js-cookie";
 import { decodeJwt } from "jose";
 import { preload } from "@/zero-preload";
+
+// Single QueryClient instance for TanStack Query (used by DuckDB search)
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      staleTime: 5 * 60 * 1000, // 5 minutes
+      gcTime: 10 * 60 * 1000,   // 10 minutes
+    },
+  },
+});
 
 const serverURL = import.meta.env.VITE_PUBLIC_SERVER ?? "http://localhost:4848";
 
@@ -77,5 +88,9 @@ export function ZeroInit({ children }: { children: React.ReactNode }) {
     })();
   }, []);
 
-  return <ZeroProvider {...opts}>{children}</ZeroProvider>;
+  return (
+    <QueryClientProvider client={queryClient}>
+      <ZeroProvider {...opts}>{children}</ZeroProvider>
+    </QueryClientProvider>
+  );
 }

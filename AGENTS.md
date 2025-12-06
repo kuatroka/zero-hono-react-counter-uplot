@@ -27,14 +27,23 @@ This project uses **drizzle-zero** to auto-generate Zero schema from Drizzle ORM
 - `src/zero/schema.ts` - Wrapper that adds permissions and re-exports
 
 ### Workflow
+
+**CRITICAL ORDER**: Postgres migration MUST complete BEFORE Zero schema generation.
+Generating Zero schema first will cause the running app to crash with `SchemaVersionNotSupported`.
+
 1. Modify `src/db/schema.ts` (add tables, columns, relations)
-2. Run `bun run generate-zero-schema` to regenerate Zero schema
+2. Run `bun run db:sync` (generates migration, applies it, then generates Zero schema)
 3. Update permissions in `src/zero/schema.ts` if needed
-4. Run `bun run db:generate` and `bun run db:migrate` for database migrations
 
 ### Key Commands
 ```bash
-bun run generate-zero-schema  # Regenerate Zero schema from Drizzle
-bun run db:generate           # Generate Drizzle migration
-bun run db:migrate            # Apply migrations to database
+bun run db:sync               # RECOMMENDED: Full sync (generate + migrate + zero-schema)
+bun run db:generate           # Generate Drizzle migration only
+bun run db:migrate            # Apply migrations to database only
+bun run generate-zero-schema  # Regenerate Zero schema from Drizzle (run AFTER migrate)
 ```
+
+### Why Order Matters
+- Zero client schema is hot-reloaded by Vite immediately after `generate-zero-schema`
+- If the table doesn't exist in Postgres yet, Zero server rejects the schema mismatch
+- This breaks ALL data syncing, not just the new table

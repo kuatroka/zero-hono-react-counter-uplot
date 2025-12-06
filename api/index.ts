@@ -2,6 +2,8 @@ import { Hono } from "hono";
 import { setCookie } from "hono/cookie";
 import { SignJWT } from "jose";
 import zeroRoutes from "./routes/zero/get-queries";
+import drilldownRoutes from "./routes/drilldown";
+import searchDuckdbRoutes from "./routes/search-duckdb";
 
 export const config = {
   runtime: "edge",
@@ -10,6 +12,8 @@ export const config = {
 export const app = new Hono().basePath("/api");
 
 app.route("/zero", zeroRoutes);
+app.route("/drilldown", drilldownRoutes);
+app.route("/duckdb-search", searchDuckdbRoutes);
 
 // See seed.sql
 // In real life you would of course authenticate the user however you like.

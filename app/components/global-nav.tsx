@@ -1,6 +1,7 @@
 import { useLocation } from "@tanstack/react-router";
 import { Link } from "./link";
 import { GlobalSearch } from "@/components/GlobalSearch";
+import { DuckDBGlobalSearch } from "@/components/DuckDBGlobalSearch";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 
 export function GlobalNav() {
@@ -19,8 +20,9 @@ export function GlobalNav() {
             </Link>
           </div>
 
-          <div className="flex-1 flex justify-center max-w-md">
+          <div className="flex-1 flex justify-center items-center gap-2">
             <GlobalSearch />
+            <DuckDBGlobalSearch />
           </div>
 
           <div className="flex items-center gap-4 flex-shrink-0">

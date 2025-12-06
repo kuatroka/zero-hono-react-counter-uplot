@@ -121,6 +121,7 @@ export const permissions = definePermissions<AuthData, Schema>(schema, () => {
         select: ANYONE_CAN,
       },
     },
+    // Note: cusipQuarterInvestorActivityDetail removed - served via pg_duckdb from Parquet files
     periods: {
       row: {
         select: ANYONE_CAN,

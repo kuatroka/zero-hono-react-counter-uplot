@@ -3,8 +3,6 @@ import { useQuery } from '@rocicorp/zero/react';
 import { queries } from '@/zero/queries';
 import { InvestorActivityChart } from '@/components/charts/InvestorActivityChart';
 import { InvestorActivityUplotChart } from '@/components/charts/InvestorActivityUplotChart';
-import { InvestorActivityNivoChart } from '@/components/charts/InvestorActivityNivoChart';
-import { InvestorActivityEchartsChart } from '@/components/charts/InvestorActivityEchartsChart';
 import { useContentReady } from '@/hooks/useContentReady';
 import { useEffect, useRef } from 'react';
 
@@ -82,7 +80,7 @@ export function AssetDetailPage() {
         </div>
 
         <div className="mt-6">
-          <Link to="/assets" search={{}} className="link link-primary">Back to assets</Link>
+          <Link to="/assets" search={{ page: undefined, search: undefined }} className="link link-primary">Back to assets</Link>
         </div>
       </div>
 
@@ -100,8 +98,10 @@ export function AssetDetailPage() {
           <>
             <InvestorActivityChart data={activityRows} ticker={record.asset} />
             <InvestorActivityUplotChart data={activityRows} ticker={record.asset} />
-            <InvestorActivityNivoChart data={activityRows} ticker={record.asset} />
-            <InvestorActivityEchartsChart data={activityRows} ticker={record.asset} />
+            {/* Nivo chart temporarily disabled */}
+            {/* <InvestorActivityNivoChart data={activityRows} ticker={record.asset} /> */}
+            {/* ECharts chart temporarily disabled */}
+            {/* <InvestorActivityEchartsChart data={activityRows} ticker={record.asset} /> */}
           </>
         )}
       </div>
