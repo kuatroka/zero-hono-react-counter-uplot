@@ -3,8 +3,17 @@ import { useQuery } from '@rocicorp/zero/react';
 import { queries } from '@/zero/queries';
 import { InvestorActivityChart } from '@/components/charts/InvestorActivityChart';
 import { InvestorActivityUplotChart } from '@/components/charts/InvestorActivityUplotChart';
+import { InvestorActivityEchartsChart } from '@/components/charts/InvestorActivityEchartsChart';
+import { InvestorActivityDrilldownTable } from '@/components/InvestorActivityDrilldownTable';
 import { useContentReady } from '@/hooks/useContentReady';
-import { useEffect, useRef } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+
+type InvestorActivityAction = 'open' | 'close';
+
+interface InvestorActivitySelection {
+  quarter: string;
+  action: InvestorActivityAction;
+}
 
 export function AssetDetailPage() {
   const { code, cusip } = useParams({ strict: false }) as { code?: string; cusip?: string };
@@ -55,6 +64,117 @@ export function AssetDetailPage() {
   const activityResult = hasCusip ? activityByCusipResult : activityByTickerResult;
   const isActivityLoading = activityResult?.type === 'unknown';
 
+  const [selection, setSelection] = useState<InvestorActivitySelection | null>(null);
+
+  const scrollYRef = useRef<number | null>(null);
+
+  const handleSelectionChange = useCallback((next: InvestorActivitySelection) => {
+    if (typeof window !== 'undefined') {
+      scrollYRef.current = window.scrollY;
+    }
+    setSelection(next);
+  }, []);
+
+  useEffect(() => {
+    if (scrollYRef.current == null) return;
+    const y = scrollYRef.current;
+    scrollYRef.current = null;
+    if (typeof window !== 'undefined') {
+      // Use double rAF to restore scroll after browser paint and any router scroll restoration
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          window.scrollTo({ top: y, left: 0, behavior: 'auto' });
+        });
+      });
+    }
+  }, [selection]);
+
+  // Reset selection when ticker changes
+  useEffect(() => {
+    setSelection(null);
+  }, [code]);
+
+  // Set initial selection using the latest aggregate quarter.
+  // Preference order:
+  // 1) For the LATEST quarter: OPEN positions
+  // 2) For the LATEST quarter: if no opens, CLOSE positions
+  // 3) If latest quarter has no detail data at all: scan backwards for
+  //    any OPEN quarter, then any CLOSE quarter
+  // 4) If still nothing: select latest quarter (open) to show "no data" message
+  useEffect(() => {
+    if (selection || activityRows.length === 0 || !code) return;
+
+    const findQuarterWithData = async () => {
+      const fetchCount = async (
+        quarter: string,
+        action: InvestorActivityAction,
+      ): Promise<number> => {
+        try {
+          const params = new URLSearchParams({ ticker: code, quarter, action });
+          const res = await fetch(`/api/duckdb-investor-drilldown?${params.toString()}`);
+          if (!res.ok) return 0;
+          const data = await res.json();
+          return typeof data.count === 'number' ? data.count : 0;
+        } catch {
+          return 0;
+        }
+      };
+
+      const latestQuarter = activityRows[activityRows.length - 1]?.quarter;
+
+      // 1) Prefer OPEN positions in the latest quarter, if any
+      if (latestQuarter) {
+        const latestOpenCount = await fetchCount(latestQuarter, 'open');
+        if (latestOpenCount > 0) {
+          setSelection({ quarter: latestQuarter, action: 'open' });
+          return;
+        }
+
+        // 2) Otherwise prefer CLOSE positions in that same latest quarter, if any
+        const latestCloseCount = await fetchCount(latestQuarter, 'close');
+        if (latestCloseCount > 0) {
+          setSelection({ quarter: latestQuarter, action: 'close' });
+          return;
+        }
+      }
+
+      // 3) Latest quarter has no detail data: scan backwards for any
+      //    quarter with OPEN positions, then any with CLOSE positions
+      const findForAction = async (action: InvestorActivityAction): Promise<string | null> => {
+        for (let i = activityRows.length - 1; i >= 0; i--) {
+          const quarter = activityRows[i]?.quarter;
+          if (!quarter) continue;
+
+          const count = await fetchCount(quarter, action);
+          if (count > 0) {
+            return quarter;
+          }
+        }
+        return null;
+      };
+
+      const openQuarter = await findForAction('open');
+      if (openQuarter) {
+        setSelection({ quarter: openQuarter, action: 'open' });
+        return;
+      }
+
+      const closeQuarter = await findForAction('close');
+      if (closeQuarter) {
+        setSelection({ quarter: closeQuarter, action: 'close' });
+        return;
+      }
+
+      // 4) Nothing has detail data: still select latest quarter to
+      //    show the "no data" message
+      if (latestQuarter) {
+        setSelection({ quarter: latestQuarter, action: 'open' });
+      }
+    };
+
+    void findQuarterWithData();
+  }, [selection, activityRows, code]);
+
   if (!code) return <div className="p-6">Missing asset code.</div>;
 
   if (record) {
@@ -84,8 +204,8 @@ export function AssetDetailPage() {
         </div>
       </div>
 
-      {/* Full-width chart section */}
-      <div className="mt-8 space-y-10 w-screen relative left-1/2 right-1/2 -ml-[50vw] -mr-[50vw] px-4 sm:px-6 lg:px-8">
+      {/* Chart + drilldown section */}
+      <div className="mt-8 px-4 sm:px-6 lg:px-8">
         {isActivityLoading ? (
           <div className="text-center py-12 text-muted-foreground">
             Loading investor activity charts...
@@ -96,12 +216,36 @@ export function AssetDetailPage() {
           </div>
         ) : (
           <>
-            <InvestorActivityChart data={activityRows} ticker={record.asset} />
-            <InvestorActivityUplotChart data={activityRows} ticker={record.asset} />
-            {/* Nivo chart temporarily disabled */}
-            {/* <InvestorActivityNivoChart data={activityRows} ticker={record.asset} /> */}
-            {/* ECharts chart temporarily disabled */}
-            {/* <InvestorActivityEchartsChart data={activityRows} ticker={record.asset} /> */}
+            <div className="grid gap-6 lg:grid-cols-2 xl:grid-cols-3">
+              <InvestorActivityChart
+                data={activityRows}
+                ticker={record.asset}
+                onBarClick={({ quarter, action }) => handleSelectionChange({ quarter, action })}
+              />
+              <InvestorActivityUplotChart
+                data={activityRows}
+                ticker={record.asset}
+                onBarClick={({ quarter, action }) => handleSelectionChange({ quarter, action })}
+              />
+              <InvestorActivityEchartsChart
+                data={activityRows}
+                ticker={record.asset}
+                onBarClick={({ quarter, action }) => handleSelectionChange({ quarter, action })}
+              />
+            </div>
+            <div className="mt-8 min-h-[200px]">
+              {selection ? (
+                <InvestorActivityDrilldownTable
+                  ticker={record.asset}
+                  quarter={selection.quarter}
+                  action={selection.action}
+                />
+              ) : (
+                <div className="py-8 text-center text-muted-foreground">
+                  Select a bar in the chart to see which superinvestors opened or closed positions.
+                </div>
+              )}
+            </div>
           </>
         )}
       </div>

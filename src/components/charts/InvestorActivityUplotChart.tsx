@@ -14,11 +14,13 @@ import type { CusipQuarterInvestorActivity } from "@/schema";
 interface InvestorActivityUplotChartProps {
   data: readonly CusipQuarterInvestorActivity[];
   ticker: string;
+  onBarClick?: (payload: { quarter: string; action: "open" | "close" }) => void;
 }
 
 export function InvestorActivityUplotChart({
   data,
   ticker,
+  onBarClick,
 }: InvestorActivityUplotChartProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<uPlot | null>(null);
@@ -41,7 +43,7 @@ export function InvestorActivityUplotChart({
         padding: [16, 40, 48, 16],
         legend: { show: true },
         scales: {
-          x: { time: false },
+          x: { time: false, range: [-0.5, labels.length - 0.5] },
           y: { auto: true },
         },
         axes: [
@@ -87,6 +89,25 @@ export function InvestorActivityUplotChart({
 
     chartRef.current = chart;
 
+    const anyChart = chart as any;
+    const zeroY = anyChart.valToPos(0, "y", true) as number;
+
+    const handleClick = (event: MouseEvent) => {
+      if (!onBarClick || !containerRef.current) return;
+      const rect = containerRef.current.getBoundingClientRect();
+      const x = event.clientX - rect.left;
+      const y = event.clientY - rect.top;
+      // Ignore clicks outside the plot area to reduce visual "flash"
+      if (x < 0 || x > rect.width || y < 0 || y > rect.height) return;
+      const idx = anyChart.posToIdx(x) as number;
+      if (idx == null || idx < 0 || idx >= labels.length) return;
+      const quarter = labels[idx];
+      const action: "open" | "close" = y < zeroY ? "open" : "close";
+      onBarClick({ quarter, action });
+    };
+
+    chart.root.addEventListener("click", handleClick);
+
     const resizeObserver = new ResizeObserver(() => {
       if (chartRef.current && containerRef.current) {
         const nextWidth = containerRef.current.clientWidth;
@@ -98,10 +119,11 @@ export function InvestorActivityUplotChart({
 
     return () => {
       resizeObserver.disconnect();
+      chart.root.removeEventListener("click", handleClick);
       chartRef.current?.destroy();
       chartRef.current = null;
     };
-  }, [data, ticker]);
+  }, [data, ticker, onBarClick]);
 
   if (data.length === 0) {
     return (

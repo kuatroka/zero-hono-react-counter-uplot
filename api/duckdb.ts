@@ -1,5 +1,8 @@
 import { DuckDBInstance } from "@duckdb/node-api";
 
+import duckdb from '@duckdb/node-api';
+console.log(duckdb.configurationOptionDescriptions());
+
 const DUCKDB_PATH = process.env.DUCKDB_PATH || "/Users/yo_macbook/Documents/app_data/TR_05_DB/TR_05_DUCKDB_FILE.duckdb";
 
 let instance: DuckDBInstance | null = null;
@@ -11,9 +14,34 @@ let connection: Awaited<ReturnType<DuckDBInstance["connect"]>> | null = null;
  */
 export async function getDuckDBConnection() {
   if (!connection) {
-    instance = await DuckDBInstance.create(DUCKDB_PATH, { threads: "4" });
+    instance = await DuckDBInstance.fromCache(DUCKDB_PATH, {
+      threads: "4",
+      access_mode: "READ_ONLY",
+    });
     connection = await instance.connect();
     console.log(`[DuckDB] Connected to ${DUCKDB_PATH}`);
+
+    try {
+      const reader = await connection.runAndRead(
+        "SELECT current_setting('access_mode') AS access_mode"
+      );
+      await reader.readAll();
+      const rows = reader.getRowObjects();
+      console.log(
+        "[DuckDB] access_mode current_setting:",
+        rows?.[0]?.access_mode ?? rows?.[0]
+      );
+    } catch (err) {
+      try {
+        const reader = await connection.runAndRead("PRAGMA show;");
+        await reader.readAll();
+        const rows = reader.getRowObjects();
+        const accessRow = rows.find((r: any) => r.name === "access_mode");
+        console.log("[DuckDB] PRAGMA show access_mode row:", accessRow);
+      } catch (err2) {
+        console.warn("[DuckDB] Failed to log access_mode", err, err2);
+      }
+    }
   }
   return connection;
 }

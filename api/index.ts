@@ -4,6 +4,8 @@ import { SignJWT } from "jose";
 import zeroRoutes from "./routes/zero/get-queries";
 import drilldownRoutes from "./routes/drilldown";
 import searchDuckdbRoutes from "./routes/search-duckdb";
+import duckdbInvestorDrilldownRoutes from "./routes/duckdb-investor-drilldown";
+import allAssetsActivityRoutes from "./routes/all-assets-activity";
 
 export const config = {
   runtime: "edge",
@@ -14,6 +16,8 @@ export const app = new Hono().basePath("/api");
 app.route("/zero", zeroRoutes);
 app.route("/drilldown", drilldownRoutes);
 app.route("/duckdb-search", searchDuckdbRoutes);
+app.route("/duckdb-investor-drilldown", duckdbInvestorDrilldownRoutes);
+app.route("/all-assets-activity", allAssetsActivityRoutes);
 
 // See seed.sql
 // In real life you would of course authenticate the user however you like.

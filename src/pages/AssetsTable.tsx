@@ -2,7 +2,8 @@ import { useEffect, useRef, useState } from 'react';
 import { useQuery, useZero } from '@rocicorp/zero/react';
 import { Link, useNavigate, useSearch } from '@tanstack/react-router';
 import { DataTable, ColumnDef } from '@/components/DataTable';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
+import { AllAssetsActivityChart } from '@/components/charts/AllAssetsActivityChart';
 import { Asset, Schema, Search } from '@/schema';
 import { queries } from '@/zero/queries';
 import { preload, PRELOAD_TTL, PRELOAD_LIMITS } from '@/zero-preload';
@@ -204,36 +205,41 @@ export function AssetsTablePage() {
   ];
 
   return (
-    <div className="container mx-auto px-4 py-8 max-w-7xl">
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-3xl font-bold tracking-tight">Assets</CardTitle>
-          <CardDescription>Browse and search all assets</CardDescription>
-        </CardHeader>
-        <CardContent>
-          {(
-            (!trimmedSearch && !assetsPageRows) ||
-            (trimmedSearch && !assetSearchRows)
-          ) ? (
-            <div className="py-8 text-center text-muted-foreground">Loading…</div>
-          ) : (
-            <DataTable
-              data={assets || []}
-              columns={columns}
-              searchPlaceholder="Search assets..."
-              defaultPageSize={tablePageSize}
-              defaultSortColumn="assetName"
-              defaultSortDirection="asc"
-              initialPage={currentPage}
-              onPageChange={handlePageChange}
-              onSearchChange={handleSearchChange}
-              searchValue={searchTerm}
-              searchDisabled={!!trimmedSearch}
-              totalCount={trimmedSearch ? assets.length : ASSETS_TOTAL_ROWS}
-            />
-          )}
-        </CardContent>
-      </Card>
+    <div className="w-full px-4 py-8 mx-auto">
+      <div className="mb-6">
+        <h1 className="text-3xl font-bold tracking-tight">Assets</h1>
+        <p className="text-muted-foreground">Browse and search all assets</p>
+      </div>
+
+      <div className="grid gap-6 lg:grid-cols-2">
+        <Card>
+          <CardContent>
+            {(
+              (!trimmedSearch && !assetsPageRows) ||
+              (trimmedSearch && !assetSearchRows)
+            ) ? (
+              <div className="py-8 text-center text-muted-foreground">Loading…</div>
+            ) : (
+              <DataTable
+                data={assets || []}
+                columns={columns}
+                searchPlaceholder="Search assets..."
+                defaultPageSize={tablePageSize}
+                defaultSortColumn="assetName"
+                defaultSortDirection="asc"
+                initialPage={currentPage}
+                onPageChange={handlePageChange}
+                onSearchChange={handleSearchChange}
+                searchValue={searchTerm}
+                searchDisabled={!!trimmedSearch}
+                totalCount={trimmedSearch ? assets.length : ASSETS_TOTAL_ROWS}
+              />
+            )}
+          </CardContent>
+        </Card>
+
+        <AllAssetsActivityChart />
+      </div>
     </div>
   );
 }

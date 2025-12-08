@@ -21,6 +21,7 @@ import type { CusipQuarterInvestorActivity } from "@/schema";
 interface InvestorActivityChartProps {
   data: readonly CusipQuarterInvestorActivity[];
   ticker: string;
+  onBarClick?: (payload: { quarter: string; action: "open" | "close" }) => void;
 }
 
 const chartConfig = {
@@ -34,7 +35,7 @@ const chartConfig = {
   },
 } satisfies ChartConfig;
 
-export function InvestorActivityChart({ data, ticker }: InvestorActivityChartProps) {
+export function InvestorActivityChart({ data, ticker, onBarClick }: InvestorActivityChartProps) {
   // Transform data: opens are positive, closes are negative
   const chartData = data.map((item) => ({
     quarter: item.quarter,
@@ -111,12 +112,26 @@ export function InvestorActivityChart({ data, ticker }: InvestorActivityChartPro
                 stackId="activity"
                 fill={chartConfig.opened.color}
                 radius={[4, 4, 0, 0]}
+                onClick={(entry: any) => {
+                  if (!onBarClick) return;
+                  const quarter = entry?.payload?.quarter as string | undefined;
+                  if (quarter) {
+                    onBarClick({ quarter, action: "open" });
+                  }
+                }}
               />
               <Bar
                 dataKey="closed"
                 stackId="activity"
                 fill={chartConfig.closed.color}
                 radius={[4, 4, 0, 0]}
+                onClick={(entry: any) => {
+                  if (!onBarClick) return;
+                  const quarter = entry?.payload?.quarter as string | undefined;
+                  if (quarter) {
+                    onBarClick({ quarter, action: "close" });
+                  }
+                }}
               />
             </BarChart>
           </ResponsiveContainer>
