@@ -26,17 +26,17 @@ function buildDrilldownQuery(
   limit: number
 ): string {
   const parquetPath = `${PARQUET_BASE_PATH}/cusip_ticker=${ticker}/*.parquet`;
-  
+
   let whereClause = "1=1";
-  
+
   if (quarter) {
     whereClause += ` AND r['quarter'] = '${quarter}'`;
   }
-  
+
   if (action) {
     const actionMap: Record<string, string> = {
       open: "did_open",
-      add: "did_add", 
+      add: "did_add",
       reduce: "did_reduce",
       close: "did_close",
       hold: "did_hold",
@@ -46,7 +46,7 @@ function buildDrilldownQuery(
       whereClause += ` AND r['${column}'] = true`;
     }
   }
-  
+
   return `
     SELECT 
       r['cusip']::TEXT as cusip,
@@ -69,12 +69,12 @@ function buildDrilldownQuery(
  */
 function buildSummaryQuery(ticker: string, quarter: string | null): string {
   const parquetPath = `${PARQUET_BASE_PATH}/cusip_ticker=${ticker}/*.parquet`;
-  
+
   let whereClause = "1=1";
   if (quarter) {
     whereClause += ` AND r['quarter'] = '${quarter}'`;
   }
-  
+
   return `
     SELECT 
       r['quarter']::TEXT as quarter,
@@ -92,9 +92,9 @@ function buildSummaryQuery(ticker: string, quarter: string | null): string {
 }
 
 // Parse URL and extract params
-function parseRequest(url: URL): { 
-  path: string; 
-  ticker: string | null; 
+function parseRequest(url: URL): {
+  path: string;
+  ticker: string | null;
   isSummary: boolean;
   quarter: string | null;
   action: string | null;
@@ -102,11 +102,11 @@ function parseRequest(url: URL): {
 } {
   const path = url.pathname;
   const parts = path.split('/').filter(Boolean);
-  
+
   // Expected: /drilldown/:ticker or /drilldown/:ticker/summary
   const ticker = parts[1]?.toUpperCase() || null;
   const isSummary = parts[2] === 'summary';
-  
+
   return {
     path,
     ticker,
@@ -119,39 +119,39 @@ function parseRequest(url: URL): {
 
 const PORT = 3006;
 
-const server = Bun.serve({
+void Bun.serve({
   port: PORT,
   async fetch(req) {
     const url = new URL(req.url);
-    
+
     // Health check
     if (url.pathname === '/health') {
       return Response.json({ status: 'ok', driver: 'bun-native-sql' });
     }
-    
+
     // Only handle /drilldown routes
     if (!url.pathname.startsWith('/drilldown/')) {
       return Response.json({ error: 'Not found' }, { status: 404 });
     }
-    
+
     const { ticker, isSummary, quarter, action, limit } = parseRequest(url);
-    
+
     if (!ticker) {
       return Response.json({ error: 'Ticker required' }, { status: 400 });
     }
-    
+
     try {
       const startTime = performance.now();
-      
+
       let result: any[];
       let query: string;
-      
+
       if (isSummary) {
         query = buildSummaryQuery(ticker, quarter);
         result = await sql.unsafe(query);
-        
+
         const queryTime = performance.now() - startTime;
-        
+
         return Response.json({
           ticker,
           quarter,
@@ -162,9 +162,9 @@ const server = Bun.serve({
       } else {
         query = buildDrilldownQuery(ticker, quarter, action, limit);
         result = await sql.unsafe(query);
-        
+
         const queryTime = performance.now() - startTime;
-        
+
         return Response.json({
           ticker,
           quarter,
@@ -178,15 +178,15 @@ const server = Bun.serve({
     } catch (error) {
       console.error("Query error:", error);
       const errorMessage = error instanceof Error ? error.message : String(error);
-      
+
       if (errorMessage.includes("No files found") || errorMessage.includes("does not exist")) {
-        return Response.json({ 
+        return Response.json({
           error: `No data found for ticker: ${ticker}`,
           ticker,
         }, { status: 404 });
       }
-      
-      return Response.json({ 
+
+      return Response.json({
         error: "Failed to query",
         details: errorMessage,
       }, { status: 500 });

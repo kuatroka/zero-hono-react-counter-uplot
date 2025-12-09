@@ -1,5 +1,5 @@
 import { Link, useLocation } from 'react-router-dom';
-import { GlobalSearch } from './GlobalSearch';
+import { DuckDBGlobalSearch } from './DuckDBGlobalSearch';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 
 export function GlobalNav() {
@@ -17,11 +17,11 @@ export function GlobalNav() {
               fintellectus
             </Link>
           </div>
-          
+
           <div className="flex-1 flex justify-center max-w-md">
-            <GlobalSearch />
+            <DuckDBGlobalSearch />
           </div>
-          
+
           <div className="flex items-center gap-4 flex-shrink-0">
             <Link
               to="/assets"

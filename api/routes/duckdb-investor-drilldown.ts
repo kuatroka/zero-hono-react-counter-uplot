@@ -48,7 +48,7 @@ duckdbInvestorDrilldownRoutes.get("/", async (c) => {
         s.cik_ticker
       FROM cusip_quarter_investor_activity_detail d
       LEFT JOIN superinvestors s ON s.cik = d.cik
-      WHERE d.ticker = '${escapedTicker}'
+      WHERE d.cusip_ticker = '${escapedTicker}'
         AND d.quarter = '${escapedQuarter}'
         AND d.${actionColumn} = true
       LIMIT ${limit}

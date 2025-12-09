@@ -1,24 +1,23 @@
-import { useEffect, useRef, useState } from 'react';
-import { useQuery, useZero } from '@rocicorp/zero/react';
+import { useEffect, useRef, useState, useMemo } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { Link, useNavigate, useSearch } from '@tanstack/react-router';
 import { DataTable, ColumnDef } from '@/components/DataTable';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Superinvestor, Schema, Search } from '@/schema';
-import { queries } from '@/zero/queries';
-import { preload, PRELOAD_TTL, PRELOAD_LIMITS } from '@/zero-preload';
 import { useContentReady } from '@/hooks/useContentReady';
 
-const SUPERINVESTORS_TOTAL_ROWS = 14908; // See REFRESH-PERSISTENCE-TEST.md / ZERO-PERSISTENCE-FIX-FINAL.md
+interface Superinvestor {
+  id: string;
+  cik: string;
+  cikName: string;
+}
+
+const SUPERINVESTORS_TOTAL_ROWS = 14908;
 
 export function SuperinvestorsTablePage() {
-  const z = useZero<Schema>();
   const navigate = useNavigate();
   const searchParams = useSearch({ strict: false }) as { page?: string; search?: string };
   const { onReady } = useContentReady();
   const tablePageSize = 10;
-  const DEFAULT_WINDOW_LIMIT = PRELOAD_LIMITS.superinvestorsTable;
-  const MAX_WINDOW_LIMIT = 50000; // Allow syncing up to 50k rows as user pages
-  const MARGIN_PAGES = 5; // Preload 5 pages ahead
 
   const rawPage = searchParams.page;
   const parsedPage = rawPage ? parseInt(rawPage, 10) : 1;
@@ -57,91 +56,44 @@ export function SuperinvestorsTablePage() {
     isTypingRef.current = false;
   }, [searchTerm, navigate]);
 
-  const [windowLimit, setWindowLimit] = useState(() => {
-    const required = currentPage * tablePageSize;
-    const base = Math.max(DEFAULT_WINDOW_LIMIT, required + tablePageSize * MARGIN_PAGES);
-    return Math.min(base, MAX_WINDOW_LIMIT);
+  // Use TanStack Query to fetch superinvestors data directly from API
+  const { data: superinvestorsData, isLoading } = useQuery({
+    queryKey: ['superinvestors'],
+    queryFn: async () => {
+      const res = await fetch('/api/superinvestors');
+      if (!res.ok) throw new Error('Failed to fetch superinvestors');
+      return res.json() as Promise<Superinvestor[]>;
+    },
+    staleTime: 5 * 60 * 1000, // 5 minutes
   });
 
-  const [superinvestorsPageRows] = useQuery(
-    queries.superinvestorsPage(windowLimit, 0),
-    { ttl: PRELOAD_TTL, enabled: !trimmedSearch }
-  );
+  // Filter superinvestors client-side based on search term
+  const filteredSuperinvestors = useMemo(() => {
+    if (!superinvestorsData) return [];
+    if (!trimmedSearch) return superinvestorsData;
 
-  const SEARCH_LIMIT = 200;
+    const lowerSearch = trimmedSearch.toLowerCase();
+    return superinvestorsData.filter(investor =>
+      investor.cik.toLowerCase().includes(lowerSearch) ||
+      investor.cikName.toLowerCase().includes(lowerSearch)
+    );
+  }, [superinvestorsData, trimmedSearch]);
 
-  const [superinvestorSearchRows] = useQuery(
-    trimmedSearch
-      ? queries.searchesByCategory('superinvestors', trimmedSearch, SEARCH_LIMIT)
-      : queries.searchesByCategory('superinvestors', '', 0),
-    { ttl: PRELOAD_TTL }
-  );
-
-  
-  const searchSuperinvestors: Superinvestor[] | undefined = trimmedSearch
-    ? superinvestorSearchRows?.map((row: Search) => ({
-      id: row.id,
-      cik: row.code,
-      cikName: row.name,
-      cikTicker: '',
-      activePeriods: '',
-    }))
-    : undefined;
-
-  const superinvestors = trimmedSearch ? searchSuperinvestors || [] : superinvestorsPageRows || [];
-
-  // Signal ready when data is available (from cache or server)
+  // Signal ready when data is available
   const readyCalledRef = useRef(false);
   useEffect(() => {
-    if (readyCalledRef.current) return; // Only call onReady once
-
-    if (trimmedSearch) {
-      // In search mode: ready when search results arrive
-      if ((superinvestorSearchRows && superinvestorSearchRows.length > 0) || superinvestorSearchRows !== undefined) {
-        readyCalledRef.current = true;
-        onReady();
-      }
-    } else {
-      // In browse mode: ready when page results arrive
-      if ((superinvestorsPageRows && superinvestorsPageRows.length > 0) || superinvestorsPageRows !== undefined) {
-        readyCalledRef.current = true;
-        onReady();
-      }
+    if (readyCalledRef.current) return;
+    if (superinvestorsData !== undefined) {
+      readyCalledRef.current = true;
+      onReady();
     }
-  }, [trimmedSearch, superinvestorsPageRows, superinvestorSearchRows, onReady]);
-
-  useEffect(() => {
-    if (trimmedSearch) return; // search mode ignores windowLimit
-    const required = currentPage * tablePageSize;
-    if (required > windowLimit) {
-      setWindowLimit(prev => {
-        const base = Math.max(prev, required + tablePageSize * MARGIN_PAGES);
-        return Math.min(base, MAX_WINDOW_LIMIT);
-      });
-    }
-  }, [currentPage, windowLimit, trimmedSearch]);
-
-  useEffect(() => {
-    preload(z);
-  }, [z]);
+  }, [superinvestorsData, onReady]);
 
   const handlePageChange = (newPage: number) => {
     navigate({
       to: '/superinvestors',
       search: { page: String(newPage), search: trimmedSearch || undefined },
     });
-
-    if (trimmedSearch) {
-      return; // pagination over search results is handled client-side only
-    }
-
-    const required = newPage * tablePageSize;
-    if (required > windowLimit) {
-      setWindowLimit(prev => {
-        const base = Math.max(prev, required + tablePageSize * MARGIN_PAGES);
-        return Math.min(base, MAX_WINDOW_LIMIT);
-      });
-    }
   };
 
   const handleSearchChange = (value: string) => {
@@ -160,12 +112,8 @@ export function SuperinvestorsTablePage() {
         <Link
           to="/superinvestors/$cik"
           params={{ cik: row.cik }}
-          onMouseEnter={() => {
-            z.preload(queries.superinvestorByCik(row.cik), { ttl: PRELOAD_TTL });
-          }}
           onMouseDown={() => {
             rowSelectedRef.current = true;
-            z.preload(queries.superinvestorByCik(row.cik), { ttl: PRELOAD_TTL });
           }}
           className={`hover:underline underline-offset-4 cursor-pointer text-foreground outline-none ${isFocused ? 'underline' : ''}`}
         >
@@ -189,14 +137,11 @@ export function SuperinvestorsTablePage() {
           <CardDescription>Browse and search institutional investors (13F filers)</CardDescription>
         </CardHeader>
         <CardContent>
-          {(
-            (!trimmedSearch && !superinvestorsPageRows) ||
-            (trimmedSearch && !superinvestorSearchRows)
-          ) ? (
+          {isLoading ? (
             <div className="py-8 text-center text-muted-foreground">Loading…</div>
           ) : (
             <DataTable
-              data={superinvestors || []}
+              data={filteredSuperinvestors || []}
               columns={columns}
               searchPlaceholder="Search superinvestors..."
               defaultPageSize={tablePageSize}
@@ -207,7 +152,7 @@ export function SuperinvestorsTablePage() {
               onSearchChange={handleSearchChange}
               searchValue={searchTerm}
               searchDisabled={!!trimmedSearch}
-              totalCount={trimmedSearch ? superinvestors?.length ?? 0 : SUPERINVESTORS_TOTAL_ROWS}
+              totalCount={trimmedSearch ? filteredSuperinvestors?.length ?? 0 : SUPERINVESTORS_TOTAL_ROWS}
             />
           )}
         </CardContent>

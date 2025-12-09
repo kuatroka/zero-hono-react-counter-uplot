@@ -1,25 +1,25 @@
-import { useEffect, useRef, useState } from 'react';
-import { useQuery, useZero } from '@rocicorp/zero/react';
+import { useEffect, useRef, useState, useMemo } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { Link, useNavigate, useSearch } from '@tanstack/react-router';
 import { DataTable, ColumnDef } from '@/components/DataTable';
 import { Card, CardContent } from '@/components/ui/card';
 import { AllAssetsActivityChart } from '@/components/charts/AllAssetsActivityChart';
-import { Asset, Schema, Search } from '@/schema';
-import { queries } from '@/zero/queries';
-import { preload, PRELOAD_TTL, PRELOAD_LIMITS } from '@/zero-preload';
 import { useContentReady } from '@/hooks/useContentReady';
+
+interface Asset {
+  id: string;
+  asset: string;
+  assetName: string;
+  cusip: string | null;
+}
 
 const ASSETS_TOTAL_ROWS = 32000;
 
 export function AssetsTablePage() {
-  const z = useZero<Schema>();
   const navigate = useNavigate();
   const searchParams = useSearch({ strict: false }) as { page?: string; search?: string };
   const { onReady } = useContentReady();
   const tablePageSize = 10;
-  const DEFAULT_WINDOW_LIMIT = PRELOAD_LIMITS.assetsTable;
-  const MAX_WINDOW_LIMIT = 50000; // Allow syncing up to 50k rows as user pages
-  const MARGIN_PAGES = 5; // Preload 5 pages ahead
 
   const rawPage = searchParams.page;
   const parsedPage = rawPage ? parseInt(rawPage, 10) : 1;
@@ -58,99 +58,51 @@ export function AssetsTablePage() {
     isTypingRef.current = false;
   }, [searchTerm, navigate]);
 
-  const [windowLimit, setWindowLimit] = useState(() => {
-    const required = currentPage * tablePageSize;
-    const base = Math.max(DEFAULT_WINDOW_LIMIT, required + tablePageSize * MARGIN_PAGES);
-    return Math.min(base, MAX_WINDOW_LIMIT);
+  // Use TanStack Query to fetch assets data directly from API
+  // This is a transitional approach while TanStack DB collections are being set up
+  const { data: assetsData, isLoading } = useQuery({
+    queryKey: ['assets'],
+    queryFn: async () => {
+      const res = await fetch('/api/assets');
+      if (!res.ok) throw new Error('Failed to fetch assets');
+      return res.json() as Promise<Asset[]>;
+    },
+    staleTime: 5 * 60 * 1000, // 5 minutes
   });
 
-  const [assetsPageRows] = useQuery(
-    queries.assetsPage(windowLimit, 0),
-    { ttl: PRELOAD_TTL, enabled: !trimmedSearch }
-  );
+  // Filter assets client-side based on search term
+  const filteredAssets = useMemo(() => {
+    if (!assetsData) return [];
+    if (!trimmedSearch) return assetsData;
 
-  const SEARCH_LIMIT = 200;
+    const lowerSearch = trimmedSearch.toLowerCase();
+    return assetsData.filter(asset =>
+      asset.asset.toLowerCase().includes(lowerSearch) ||
+      asset.assetName.toLowerCase().includes(lowerSearch)
+    );
+  }, [assetsData, trimmedSearch]);
 
-  const [assetSearchRows] = useQuery(
-    trimmedSearch
-      ? queries.searchesByCategory('assets', trimmedSearch, SEARCH_LIMIT)
-      : queries.searchesByCategory('assets', '', 0),
-    { ttl: PRELOAD_TTL }
-  );
-
-  
-  // Map search results to Asset-like objects, preserving cusip
-  const searchAssets: Asset[] | undefined = trimmedSearch
-    ? assetSearchRows?.map((row: Search) => ({
-      id: row.id,
-      asset: row.code,
-      assetName: row.name,
-      cusip: row.cusip ?? null,
-    }))
-    : undefined;
-
-  const assets = trimmedSearch ? searchAssets || [] : assetsPageRows || [];
-
-  // Signal ready when data is available (from cache or server)
+  // Signal ready when data is available
   const readyCalledRef = useRef(false);
   useEffect(() => {
-    if (readyCalledRef.current) return; // Only call onReady once
-
-    if (trimmedSearch) {
-      // In search mode: ready when search results arrive
-      if ((assetSearchRows && assetSearchRows.length > 0) || assetSearchRows !== undefined) {
-        readyCalledRef.current = true;
-        onReady();
-      }
-    } else {
-      // In browse mode: ready when page results arrive
-      if ((assetsPageRows && assetsPageRows.length > 0) || assetsPageRows !== undefined) {
-        readyCalledRef.current = true;
-        onReady();
-      }
+    if (readyCalledRef.current) return;
+    if (assetsData !== undefined) {
+      readyCalledRef.current = true;
+      onReady();
     }
-  }, [trimmedSearch, assetsPageRows, assetSearchRows, onReady]);
-
-  useEffect(() => {
-    if (trimmedSearch) return; // search mode ignores windowLimit
-    const required = currentPage * tablePageSize;
-    if (required > windowLimit) {
-      setWindowLimit(prev => {
-        const base = Math.max(prev, required + tablePageSize * MARGIN_PAGES);
-        return Math.min(base, MAX_WINDOW_LIMIT);
-      });
-    }
-  }, [currentPage, windowLimit, trimmedSearch]);
-
-  useEffect(() => {
-    preload(z);
-  }, [z]);
+  }, [assetsData, onReady]);
 
   const handlePageChange = (newPage: number) => {
     navigate({
       to: '/assets',
       search: { page: String(newPage), search: trimmedSearch || undefined },
     });
-
-    if (trimmedSearch) {
-      return; // pagination over search results is handled client-side only
-    }
-
-    const required = newPage * tablePageSize;
-    if (required > windowLimit) {
-      setWindowLimit(prev => {
-        const base = Math.max(prev, required + tablePageSize * MARGIN_PAGES);
-        return Math.min(base, MAX_WINDOW_LIMIT);
-      });
-    }
   };
 
   const handleSearchChange = (value: string) => {
     isTypingRef.current = true;
     setSearchTerm(value);
   };
-
-  // Helper removed: using route params API on Link
 
   const columns: ColumnDef<Asset>[] = [
     {
@@ -164,30 +116,8 @@ export function AssetsTablePage() {
           <Link
             to="/assets/$code/$cusip"
             params={{ code: row.asset, cusip: row.cusip ?? '_' }}
-            onMouseEnter={() => {
-              // Preload asset record
-              if (row.cusip) {
-                z.preload(queries.assetBySymbolAndCusip(row.asset, row.cusip), { ttl: PRELOAD_TTL });
-                // Preload investor activity for charts
-                z.preload(queries.investorActivityByCusip(row.cusip), { ttl: PRELOAD_TTL });
-              } else {
-                z.preload(queries.assetBySymbol(row.asset), { ttl: PRELOAD_TTL });
-                // Preload investor activity for charts
-                z.preload(queries.investorActivityByTicker(row.asset), { ttl: PRELOAD_TTL });
-              }
-            }}
             onMouseDown={() => {
               rowSelectedRef.current = true;
-              // Preload asset record
-              if (row.cusip) {
-                z.preload(queries.assetBySymbolAndCusip(row.asset, row.cusip), { ttl: PRELOAD_TTL });
-                // Preload investor activity for charts
-                z.preload(queries.investorActivityByCusip(row.cusip), { ttl: PRELOAD_TTL });
-              } else {
-                z.preload(queries.assetBySymbol(row.asset), { ttl: PRELOAD_TTL });
-                // Preload investor activity for charts
-                z.preload(queries.investorActivityByTicker(row.asset), { ttl: PRELOAD_TTL });
-              }
             }}
             className={`hover:underline underline-offset-4 cursor-pointer text-foreground outline-none ${isFocused ? 'underline' : ''}`}
           >
@@ -214,14 +144,11 @@ export function AssetsTablePage() {
       <div className="grid gap-6 lg:grid-cols-2">
         <Card>
           <CardContent>
-            {(
-              (!trimmedSearch && !assetsPageRows) ||
-              (trimmedSearch && !assetSearchRows)
-            ) ? (
+            {isLoading ? (
               <div className="py-8 text-center text-muted-foreground">Loading…</div>
             ) : (
               <DataTable
-                data={assets || []}
+                data={filteredAssets || []}
                 columns={columns}
                 searchPlaceholder="Search assets..."
                 defaultPageSize={tablePageSize}
@@ -232,7 +159,7 @@ export function AssetsTablePage() {
                 onSearchChange={handleSearchChange}
                 searchValue={searchTerm}
                 searchDisabled={!!trimmedSearch}
-                totalCount={trimmedSearch ? assets.length : ASSETS_TOTAL_ROWS}
+                totalCount={trimmedSearch ? filteredAssets.length : ASSETS_TOTAL_ROWS}
               />
             )}
           </CardContent>

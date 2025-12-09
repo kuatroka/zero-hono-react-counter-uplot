@@ -62,7 +62,7 @@ export function AllAssetsActivityChart({ onBarClick }: AllAssetsActivityChartPro
 
   return (
     <OpenedClosedBarChart
-      data={data?.data ?? []}
+      data={data?.rows ?? []}
       title="All Assets Activity (ECharts)"
       description="Total opened (green) and closed (red) positions across all assets by quarter"
       onBarClick={onBarClick}

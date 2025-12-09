@@ -1,12 +1,12 @@
 import { useParams, Link } from '@tanstack/react-router';
-import { useQuery } from '@rocicorp/zero/react';
-import { queries } from '@/zero/queries';
-import { InvestorActivityChart } from '@/components/charts/InvestorActivityChart';
+import { useQuery } from '@tanstack/react-query';
+
 import { InvestorActivityUplotChart } from '@/components/charts/InvestorActivityUplotChart';
 import { InvestorActivityEchartsChart } from '@/components/charts/InvestorActivityEchartsChart';
 import { InvestorActivityDrilldownTable } from '@/components/InvestorActivityDrilldownTable';
 import { useContentReady } from '@/hooks/useContentReady';
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { type CusipQuarterInvestorActivity } from '@/schema';
 
 type InvestorActivityAction = 'open' | 'close';
 
@@ -15,57 +15,64 @@ interface InvestorActivitySelection {
   action: InvestorActivityAction;
 }
 
+interface Asset {
+  id: string;
+  asset: string;
+  assetName: string;
+  cusip: string | null;
+}
+
 export function AssetDetailPage() {
   const { code, cusip } = useParams({ strict: false }) as { code?: string; cusip?: string };
   const { onReady } = useContentReady();
-  
+
   // Determine if we have a valid cusip (not "_" placeholder)
   const hasCusip = cusip && cusip !== "_";
 
-  // Query asset: prefer by symbol+cusip if cusip is available, otherwise by symbol only
-  const [rowsBySymbolAndCusip, resultBySymbolAndCusip] = useQuery(
-    queries.assetBySymbolAndCusip(code || '', cusip || ''),
-    { enabled: Boolean(code) && Boolean(hasCusip), ttl: '5m' }
+  // Query asset from TanStack Query directly
+  const { data: assetsData, isLoading: isAssetsLoading } = useQuery({
+    queryKey: ['assets'],
+    queryFn: async () => {
+      const res = await fetch('/api/assets');
+      if (!res.ok) throw new Error('Failed to fetch assets');
+      return res.json() as Promise<Asset[]>;
+    },
+    staleTime: 5 * 60 * 1000,
+  });
+
+  // Find the specific asset record
+  const record = assetsData?.find(a =>
+    hasCusip
+      ? a.asset === code && a.cusip === cusip
+      : a.asset === code
   );
 
-  const [rowsBySymbol, resultBySymbol] = useQuery(
-    queries.assetBySymbol(code || ''),
-    { enabled: Boolean(code) && !hasCusip, ttl: '5m' }
-  );
-
-  // Use the appropriate result based on whether we have a cusip
-  const rows = hasCusip ? rowsBySymbolAndCusip : rowsBySymbol;
-  const result = hasCusip ? resultBySymbolAndCusip : resultBySymbol;
-  const record = rows?.[0];
-
-  // Signal ready immediately when asset record is available (don't wait for charts)
+  // Signal ready immediately when asset record is available
   const readyCalledRef = useRef(false);
   useEffect(() => {
-    if (readyCalledRef.current) return; // Only call onReady once
-    
-    if (record || result.type === 'complete') {
+    if (readyCalledRef.current) return;
+    if (record || (!isAssetsLoading && assetsData !== undefined)) {
       readyCalledRef.current = true;
       onReady();
     }
-  }, [record, result.type, onReady]);
+  }, [record, isAssetsLoading, assetsData, onReady]);
 
-  // Query investor activity: prefer by cusip if available, otherwise by ticker
-  const [activityByCusip, activityByCusipResult] = useQuery(
-    queries.investorActivityByCusip(cusip || ''),
-    { enabled: Boolean(hasCusip), ttl: '5m' }
-  );
+  // Query investor activity from DuckDB
+  const { data: activityData, isLoading: isActivityLoading } = useQuery({
+    queryKey: ['investor-activity', hasCusip ? cusip : code],
+    queryFn: async () => {
+      const res = await fetch(`/api/all-assets-activity?${hasCusip ? `cusip=${cusip}` : `ticker=${code}`}`);
+      if (!res.ok) throw new Error('Failed to fetch investor activity');
+      const data = await res.json();
+      return (data.rows || []) as CusipQuarterInvestorActivity[];
+    },
+    enabled: Boolean(code),
+    staleTime: 5 * 60 * 1000,
+  });
 
-  const [activityByTicker, activityByTickerResult] = useQuery(
-    queries.investorActivityByTicker(code || ''),
-    { enabled: Boolean(code) && !hasCusip, ttl: '5m' }
-  );
-
-  const activityRows = hasCusip ? (activityByCusip ?? []) : (activityByTicker ?? []);
-  const activityResult = hasCusip ? activityByCusipResult : activityByTickerResult;
-  const isActivityLoading = activityResult?.type === 'unknown';
+  const activityRows = activityData ?? [];
 
   const [selection, setSelection] = useState<InvestorActivitySelection | null>(null);
-
   const scrollYRef = useRef<number | null>(null);
 
   const handleSelectionChange = useCallback((next: InvestorActivitySelection) => {
@@ -80,7 +87,6 @@ export function AssetDetailPage() {
     const y = scrollYRef.current;
     scrollYRef.current = null;
     if (typeof window !== 'undefined') {
-      // Use double rAF to restore scroll after browser paint and any router scroll restoration
       requestAnimationFrame(() => {
         requestAnimationFrame(() => {
           window.scrollTo({ top: y, left: 0, behavior: 'auto' });
@@ -95,12 +101,6 @@ export function AssetDetailPage() {
   }, [code]);
 
   // Set initial selection using the latest aggregate quarter.
-  // Preference order:
-  // 1) For the LATEST quarter: OPEN positions
-  // 2) For the LATEST quarter: if no opens, CLOSE positions
-  // 3) If latest quarter has no detail data at all: scan backwards for
-  //    any OPEN quarter, then any CLOSE quarter
-  // 4) If still nothing: select latest quarter (open) to show "no data" message
   useEffect(() => {
     if (selection || activityRows.length === 0 || !code) return;
 
@@ -122,7 +122,6 @@ export function AssetDetailPage() {
 
       const latestQuarter = activityRows[activityRows.length - 1]?.quarter;
 
-      // 1) Prefer OPEN positions in the latest quarter, if any
       if (latestQuarter) {
         const latestOpenCount = await fetchCount(latestQuarter, 'open');
         if (latestOpenCount > 0) {
@@ -130,7 +129,6 @@ export function AssetDetailPage() {
           return;
         }
 
-        // 2) Otherwise prefer CLOSE positions in that same latest quarter, if any
         const latestCloseCount = await fetchCount(latestQuarter, 'close');
         if (latestCloseCount > 0) {
           setSelection({ quarter: latestQuarter, action: 'close' });
@@ -138,17 +136,12 @@ export function AssetDetailPage() {
         }
       }
 
-      // 3) Latest quarter has no detail data: scan backwards for any
-      //    quarter with OPEN positions, then any with CLOSE positions
       const findForAction = async (action: InvestorActivityAction): Promise<string | null> => {
         for (let i = activityRows.length - 1; i >= 0; i--) {
           const quarter = activityRows[i]?.quarter;
           if (!quarter) continue;
-
           const count = await fetchCount(quarter, action);
-          if (count > 0) {
-            return quarter;
-          }
+          if (count > 0) return quarter;
         }
         return null;
       };
@@ -165,8 +158,6 @@ export function AssetDetailPage() {
         return;
       }
 
-      // 4) Nothing has detail data: still select latest quarter to
-      //    show the "no data" message
       if (latestQuarter) {
         setSelection({ quarter: latestQuarter, action: 'open' });
       }
@@ -177,31 +168,30 @@ export function AssetDetailPage() {
 
   if (!code) return <div className="p-6">Missing asset code.</div>;
 
-  if (record) {
-    // We have data, render it immediately (even if still syncing)
-  } else if (result.type === 'unknown') {
-    // Still loading and no cached data yet
+  if (isAssetsLoading) {
     return <div className="p-6">Loading…</div>;
-  } else {
-    // Query completed but no record found
+  }
+
+  if (!record) {
     return <div className="p-6">Asset not found.</div>;
   }
 
   return (
     <>
-      <div className="container mx-auto px-4 py-8 max-w-4xl">
-        <div className="mb-6">
-          <h1 className="text-3xl font-bold">{record.assetName}</h1>
+      <div className="w-full px-4 sm:px-6 lg:px-8 py-8 grid grid-cols-3 items-center">
+        <div className="text-left">
+          <Link
+            to="/assets"
+            search={{ page: undefined, search: undefined }}
+            className="text-primary hover:underline whitespace-nowrap"
+          >
+            &larr; Back to assets
+          </Link>
         </div>
-        <div className="space-y-3 text-lg">
-          <div><span className="font-semibold">Symbol:</span> {record.asset}</div>
-          {record.cusip && <div><span className="font-semibold">CUSIP:</span> {record.cusip}</div>}
-          <div><span className="font-semibold">ID:</span> {record.id}</div>
+        <div className="text-center">
+          <h1 className="text-3xl font-bold whitespace-nowrap overflow-hidden text-ellipsis">({record.asset}) {record.assetName}</h1>
         </div>
-
-        <div className="mt-6">
-          <Link to="/assets" search={{ page: undefined, search: undefined }} className="link link-primary">Back to assets</Link>
-        </div>
+        <div className="text-right"></div>
       </div>
 
       {/* Chart + drilldown section */}
@@ -216,12 +206,8 @@ export function AssetDetailPage() {
           </div>
         ) : (
           <>
-            <div className="grid gap-6 lg:grid-cols-2 xl:grid-cols-3">
-              <InvestorActivityChart
-                data={activityRows}
-                ticker={record.asset}
-                onBarClick={({ quarter, action }) => handleSelectionChange({ quarter, action })}
-              />
+            {/* Charts Section */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <InvestorActivityUplotChart
                 data={activityRows}
                 ticker={record.asset}

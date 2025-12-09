@@ -30,7 +30,7 @@ export interface AllAssetsActivityRow {
 
 /** Response from /api/all-assets-activity endpoint */
 export interface AllAssetsActivityResponse {
-  data: AllAssetsActivityRow[];
+  rows: AllAssetsActivityRow[];
   count: number;
   queryTimeMs: number;
 }

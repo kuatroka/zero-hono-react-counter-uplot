@@ -1,40 +1,43 @@
 import { useParams, Link } from '@tanstack/react-router';
-import { useQuery } from '@rocicorp/zero/react';
-import { queries } from '@/zero/queries';
+import { useQuery } from '@tanstack/react-query';
 import { useContentReady } from '@/hooks/useContentReady';
 import { useEffect, useRef } from 'react';
+import { type Superinvestor } from '@/collections';
 
 export function SuperinvestorDetailPage() {
   const { cik } = useParams({ strict: false }) as { cik?: string };
   const { onReady } = useContentReady();
 
-  const [rows, result] = useQuery(
-    queries.superinvestorByCik(cik || ''),
-    { enabled: Boolean(cik), ttl: '5m' }
-  );
+  // Fetch superinvestors list and find the matching one
+  const { data: superinvestorsData, isLoading } = useQuery({
+    queryKey: ['superinvestors'],
+    queryFn: async () => {
+      const res = await fetch('/api/superinvestors');
+      if (!res.ok) throw new Error('Failed to fetch superinvestors');
+      return res.json() as Promise<Superinvestor[]>;
+    },
+    staleTime: 5 * 60 * 1000,
+  });
 
-  const record = rows?.[0];
+  const record = superinvestorsData?.find(s => s.cik === cik);
 
   // Signal ready when data is available (from cache or server)
   const readyCalledRef = useRef(false);
   useEffect(() => {
-    if (readyCalledRef.current) return; // Only call onReady once
-    
-    if (record || result.type === 'complete') {
+    if (readyCalledRef.current) return;
+    if (record || (!isLoading && superinvestorsData !== undefined)) {
       readyCalledRef.current = true;
       onReady();
     }
-  }, [record, result.type, onReady]);
+  }, [record, isLoading, superinvestorsData, onReady]);
 
   if (!cik) return <div className="p-6">Missing CIK.</div>;
 
-  if (record) {
-    // We have data, render it immediately (even if still syncing)
-  } else if (result.type === 'unknown') {
-    // Still loading and no cached data yet
+  if (isLoading) {
     return <div className="p-6">Loading…</div>;
-  } else {
-    // Query completed but no record found
+  }
+
+  if (!record) {
     return <div className="p-6">Superinvestor not found.</div>;
   }
 
@@ -45,12 +48,9 @@ export function SuperinvestorDetailPage() {
       </div>
       <div className="space-y-3 text-lg">
         <div><span className="font-semibold">CIK:</span> {record.cik}</div>
-        <div><span className="font-semibold">Ticker:</span> {record.cikTicker ?? '—'}</div>
-        <div><span className="font-semibold">Active Periods:</span> {record.activePeriods ?? '—'}</div>
-        <div><span className="font-semibold">ID:</span> {record.id}</div>
       </div>
       <div className="mt-6">
-        <Link to="/superinvestors" search={{}} className="link link-primary">Back to superinvestors</Link>
+        <Link to="/superinvestors" search={{ page: undefined, search: undefined }} className="link link-primary">Back to superinvestors</Link>
       </div>
     </div>
   );

@@ -1,5 +1,5 @@
 import { createFileRoute, Outlet } from "@tanstack/react-router";
-import { ZeroInit } from "../../components/zero-init";
+import { AppProvider } from "../../components/app-provider";
 import { SiteLayout } from "../../components/site-layout";
 
 export const Route = createFileRoute("/_layout")({
@@ -10,10 +10,10 @@ export const Route = createFileRoute("/_layout")({
 
 function RouteComponent() {
   return (
-    <ZeroInit>
+    <AppProvider>
       <SiteLayout>
         <Outlet />
       </SiteLayout>
-    </ZeroInit>
+    </AppProvider>
   );
 }
