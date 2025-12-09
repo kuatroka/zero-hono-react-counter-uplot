@@ -1,3 +1,5 @@
+import { createCollection } from '@tanstack/db'
+import { queryCollectionOptions } from '@tanstack/query-db-collection'
 import { QueryClient } from '@tanstack/query-core'
 
 export interface InvestorDetail {
@@ -16,91 +18,46 @@ export interface InvestorDetail {
     didHold: boolean | null
 }
 
-// Track which [ticker, quarter, action] combinations have been fetched
-const fetchedCombinations = new Set<string>()
+// Map of ticker -> collection for on-demand drilldown data loading
+const drilldownCollections = new Map<string, any>()
 
 /**
- * Get the query key for all drilldown data for a ticker (for use with useQuery).
- * This allows components to subscribe to the accumulated drilldown cache.
+ * Get or create a TanStack DB collection for a ticker's drilldown data.
+ * Uses on-demand syncMode to load data incrementally as queries request it.
  */
-export function getTickerDrilldownQueryKey(ticker: string): string[] {
-    return ['investor-details-all', ticker]
+export function getDrilldownCollection(queryClient: QueryClient, ticker: string) {
+    if (drilldownCollections.has(ticker)) {
+        return drilldownCollections.get(ticker)!
+    }
+
+    const collection = createCollection(
+        queryCollectionOptions({
+            queryKey: ['investor-details', ticker],
+            queryFn: async () => {
+                // Return empty array initially - data will be added via collection.insert()
+                return []
+            },
+            syncMode: 'on-demand' as const,
+            queryClient,
+            getKey: (item: InvestorDetail) => item.id,
+        })
+    )
+
+    drilldownCollections.set(ticker, collection)
+    return collection
 }
 
 /**
- * Get all drilldown rows for a ticker from React Query cache.
- */
-function getAllDrilldownRows(queryClient: QueryClient, ticker: string): InvestorDetail[] {
-    const key = getTickerDrilldownQueryKey(ticker)
-    const data = queryClient.getQueryData<InvestorDetail[]>(key) ?? []
-    console.log(`[getAllDrilldownRows] ${ticker}: Retrieved ${data.length} rows from cache (key: ${JSON.stringify(key)})`)
-    return data
-}
-
-/**
- * Set all drilldown rows for a ticker in React Query cache.
- */
-function setAllDrilldownRows(queryClient: QueryClient, ticker: string, rows: InvestorDetail[]): void {
-    const key = getTickerDrilldownQueryKey(ticker)
-    console.log(`[setAllDrilldownRows] ${ticker}: Setting ${rows.length} rows in cache (key: ${JSON.stringify(key)})`)
-    queryClient.setQueryData(key, rows)
-}
-
-/**
- * Check if data for a specific [ticker, quarter, action] has been fetched
- */
-export function hasFetchedDrilldownData(ticker: string, quarter: string, action: 'open' | 'close'): boolean {
-    return fetchedCombinations.has(`${ticker}-${quarter}-${action}`)
-}
-
-/**
- * Fetch drill-down data for a specific [ticker, quarter, action] and add to the ticker's collection.
- * Returns the fetched rows and query time.
+ * Fetch drill-down data from API for a specific [ticker, quarter, action].
+ * Adds rows to the TanStack DB collection.
  */
 export async function fetchDrilldownData(
     queryClient: QueryClient,
     ticker: string,
     quarter: string,
     action: 'open' | 'close'
-): Promise<{ rows: InvestorDetail[], queryTimeMs: number, fromCache: boolean }> {
+): Promise<{ rows: InvestorDetail[], queryTimeMs: number }> {
     const cacheKey = `${ticker}-${quarter}-${action}`
-    
-    // Check if data is already in cache (either marked as fetched or actually present)
-    const allData = getAllDrilldownRows(queryClient, ticker)
-    const cachedRows = allData.filter((item: InvestorDetail) => item.quarter === quarter && item.action === action)
-    
-    console.log(`[fetchDrilldownData] ${cacheKey}: cachedRows=${cachedRows.length}, inSet=${fetchedCombinations.has(cacheKey)}`)
-    console.log(`[fetchDrilldownData] ${cacheKey}: Sample rows from cache:`, allData.slice(0, 5).map(r => `${r.quarter}-${r.action}`))
-    
-    // Debug: Check if 2025Q3 close exists in cache
-    if (quarter === '2025Q3' && action === 'close') {
-        const uniqueCombos = new Set(allData.map(r => `${r.quarter}-${r.action}`))
-        console.log(`[DEBUG] All unique quarter-action combos in cache:`, Array.from(uniqueCombos).sort())
-        console.log(`[DEBUG] Looking for rows with quarter='${quarter}' and action='${action}'`)
-        const matches = allData.filter(r => r.quarter === quarter && r.action === action)
-        console.log(`[DEBUG] Found ${matches.length} matches`)
-        if (matches.length === 0 && allData.length > 0) {
-            console.log(`[DEBUG] First row in cache:`, allData[0])
-            console.log(`[DEBUG] Comparison: row.quarter='${allData[0].quarter}' === '${quarter}' ?`, allData[0].quarter === quarter)
-            console.log(`[DEBUG] Comparison: row.action='${allData[0].action}' === '${action}' ?`, allData[0].action === action)
-        }
-    }
-    
-    if (cachedRows.length > 0) {
-        // Data exists in cache, mark as fetched and return it
-        console.log(`[fetchDrilldownData] ${cacheKey}: Returning from cache (${cachedRows.length} rows)`)
-        fetchedCombinations.add(cacheKey)
-        return { rows: cachedRows, queryTimeMs: 0, fromCache: true }
-    }
-    
-    // Also check the Set for cases where we know it was fetched but returned 0 rows
-    if (fetchedCombinations.has(cacheKey)) {
-        console.log(`[fetchDrilldownData] ${cacheKey}: Previously fetched, returned 0 rows`)
-        return { rows: [], queryTimeMs: 0, fromCache: true }
-    }
-    
-    console.log(`[fetchDrilldownData] ${cacheKey}: Not in cache, fetching from API...`)
-    
     const startTime = performance.now()
     
     const searchParams = new URLSearchParams()
@@ -115,7 +72,7 @@ export async function fetchDrilldownData(
     const queryTimeMs = performance.now() - startTime
     
     // Log API response for debugging
-    console.log(`[fetchDrilldownData] ${ticker} ${quarter} ${action}: API returned ${data.rows?.length ?? 0} rows`)
+    console.log(`[fetchDrilldownData] ${cacheKey}: API returned ${data.rows?.length ?? 0} rows in ${queryTimeMs.toFixed(1)}ms`)
     
     // Transform API response to InvestorDetail format
     const rows: InvestorDetail[] = (data.rows || []).map((row: any, index: number) => ({
@@ -134,19 +91,13 @@ export async function fetchDrilldownData(
         didHold: row.didHold ?? null,
     }))
     
-    // Add to React Query cache (accumulate all rows for this ticker)
-    // Deduplicate by ID to prevent duplicates on re-fetch
-    const existingRows = getAllDrilldownRows(queryClient, ticker)
-    const existingIds = new Set(existingRows.map(r => r.id))
-    const newRows = rows.filter(r => !existingIds.has(r.id))
-    const updatedRows = [...existingRows, ...newRows]
-    console.log(`[fetchDrilldownData] ${cacheKey}: Adding ${newRows.length} new rows to cache (existing: ${existingRows.length}, total: ${updatedRows.length})`)
-    setAllDrilldownRows(queryClient, ticker, updatedRows)
+    // Add rows to the TanStack DB collection
+    const collection = getDrilldownCollection(queryClient, ticker)
+    for (const row of rows) {
+        collection.insert(row)
+    }
     
-    // Mark as fetched
-    fetchedCombinations.add(cacheKey)
-    
-    return { rows, queryTimeMs, fromCache: false }
+    return { rows, queryTimeMs }
 }
 
 /**
@@ -159,13 +110,6 @@ export async function backgroundLoadAllDrilldownData(
     quarters: string[],
     onProgress?: (loaded: number, total: number) => void
 ): Promise<void> {
-    // Initialize fetchedCombinations from existing cache to avoid re-fetching on page refresh
-    const existingRows = getAllDrilldownRows(queryClient, ticker)
-    for (const row of existingRows) {
-        const cacheKey = `${row.ticker}-${row.quarter}-${row.action}`
-        fetchedCombinations.add(cacheKey)
-    }
-    
     const actions: Array<'open' | 'close'> = ['open', 'close']
     const total = quarters.length * actions.length
     let loaded = 0
@@ -198,22 +142,4 @@ export async function backgroundLoadAllDrilldownData(
             )
         )
     }
-}
-
-/**
- * Get drill-down data from React Query cache (instant query).
- * Returns null if data hasn't been fetched yet.
- */
-export function getDrilldownDataFromCollection(
-    queryClient: QueryClient,
-    ticker: string,
-    quarter: string,
-    action: 'open' | 'close'
-): InvestorDetail[] | null {
-    if (!hasFetchedDrilldownData(ticker, quarter, action)) {
-        return null
-    }
-    
-    const allData = getAllDrilldownRows(queryClient, ticker)
-    return allData.filter((item: InvestorDetail) => item.quarter === quarter && item.action === action)
 }

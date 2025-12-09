@@ -6,7 +6,6 @@ import { InvestorActivityUplotChart } from '@/components/charts/InvestorActivity
 import { InvestorActivityEchartsChart } from '@/components/charts/InvestorActivityEchartsChart';
 import { InvestorFlowChart } from '@/components/charts/InvestorFlowChart';
 import { InvestorActivityDrilldownTable } from '@/components/InvestorActivityDrilldownTable';
-import { InvestorActivityDrilldownDebugTable } from '@/components/InvestorActivityDrilldownDebugTable';
 import { useContentReady } from '@/hooks/useContentReady';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { assetsCollection, queryClient } from '@/collections';
@@ -307,10 +306,6 @@ export function AssetDetailPage() {
                 <div className="py-8 text-center text-muted-foreground">
                   Select a bar in the chart to see which superinvestors opened or closed positions.
                 </div>
-              )}
-
-              {import.meta.env.DEV && (
-                <InvestorActivityDrilldownDebugTable ticker={record.asset} />
               )}
             </div>
           </>
