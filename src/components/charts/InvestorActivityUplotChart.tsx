@@ -101,8 +101,32 @@ export function InvestorActivityUplotChart({
       if (x < 0 || x > rect.width || y < 0 || y > rect.height) return;
       const idx = anyChart.posToIdx(x) as number;
       if (idx == null || idx < 0 || idx >= labels.length) return;
+
       const quarter = labels[idx];
-      const action: "open" | "close" = y < zeroY ? "open" : "close";
+
+      // Derive action primarily from underlying data at this index.
+      // This is more robust than relying only on the y coordinate, which
+      // can misclassify clicks and cause the drilldown table to go blank.
+      const openedVal = opened[idx] ?? 0;
+      const closedVal = closed[idx] ?? 0; // closed series is already negative
+
+      let action: "open" | "close";
+
+      if (openedVal > 0 && closedVal === 0) {
+        action = "open";
+      } else if (closedVal < 0 && openedVal === 0) {
+        action = "close";
+      } else if (openedVal === 0 && closedVal === 0) {
+        // No data at this index; fall back to y position as a best effort
+        action = y < zeroY ? "open" : "close";
+      } else {
+        // Both series have non-zero values (rare); use y position as tiebreaker
+        action = y < zeroY ? "open" : "close";
+      }
+
+      console.log(
+        `[uPlot Click] quarter=${quarter}, action=${action}, idx=${idx}, y=${y}, zeroY=${zeroY}, openedVal=${openedVal}, closedVal=${closedVal}`,
+      );
       onBarClick({ quarter, action });
     };
 

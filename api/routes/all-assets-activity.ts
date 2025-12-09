@@ -31,7 +31,7 @@ allAssetsActivityRoutes.get("/", async (c) => {
       if (cusip) {
         whereClause = `cusip = '${cusip.replace(/'/g, "''")}'`;
       } else if (ticker) {
-        whereClause = `cusip_ticker = '${ticker.replace(/'/g, "''")}'`;
+        whereClause = `ticker = '${ticker.replace(/'/g, "''")}'`;
       }
 
       const sql = `
@@ -43,7 +43,7 @@ allAssetsActivityRoutes.get("/", async (c) => {
            num_close,
            num_hold,
            cusip,
-           cusip_ticker as ticker
+           ticker
          FROM cusip_quarter_investor_activity
          WHERE ${whereClause}
          ORDER BY quarter ASC

@@ -1,7 +1,6 @@
 import { DuckDBInstance } from "@duckdb/node-api";
 
-import duckdb from '@duckdb/node-api';
-console.log(duckdb.configurationOptionDescriptions());
+
 
 const DUCKDB_PATH = process.env.DUCKDB_PATH || "/Users/yo_macbook/Documents/app_data/TR_05_DB/TR_05_DUCKDB_FILE.duckdb";
 

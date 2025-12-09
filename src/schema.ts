@@ -8,4 +8,5 @@ export type {
   Search,
   Superinvestor,
   ValueQuarter,
+  InvestorFlow,
 } from "./types";

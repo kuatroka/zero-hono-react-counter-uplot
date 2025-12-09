@@ -47,3 +47,9 @@ export interface ValueQuarter {
     quarter: string;
     value: number;
 }
+
+export interface InvestorFlow {
+    quarter: string;
+    inflow: number;
+    outflow: number;
+}

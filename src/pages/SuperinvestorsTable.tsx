@@ -1,15 +1,10 @@
 import { useEffect, useRef, useState, useMemo } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useLiveQuery } from '@tanstack/react-db';
 import { Link, useNavigate, useSearch } from '@tanstack/react-router';
 import { DataTable, ColumnDef } from '@/components/DataTable';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { useContentReady } from '@/hooks/useContentReady';
-
-interface Superinvestor {
-  id: string;
-  cik: string;
-  cikName: string;
-}
+import { superinvestorsCollection, type Superinvestor } from '@/collections';
 
 const SUPERINVESTORS_TOTAL_ROWS = 14908;
 
@@ -56,24 +51,20 @@ export function SuperinvestorsTablePage() {
     isTypingRef.current = false;
   }, [searchTerm, navigate]);
 
-  // Use TanStack Query to fetch superinvestors data directly from API
-  const { data: superinvestorsData, isLoading } = useQuery({
-    queryKey: ['superinvestors'],
-    queryFn: async () => {
-      const res = await fetch('/api/superinvestors');
-      if (!res.ok) throw new Error('Failed to fetch superinvestors');
-      return res.json() as Promise<Superinvestor[]>;
-    },
-    staleTime: 5 * 60 * 1000, // 5 minutes
-  });
+  // Use TanStack DB useLiveQuery for instant local queries
+  // Data is preloaded on app init, so queries execute against local collection
+  const { data: superinvestorsData, isLoading } = useLiveQuery(
+    (q) => q.from({ superinvestors: superinvestorsCollection }),
+  );
 
   // Filter superinvestors client-side based on search term
+  // This filtering happens instantly against local data
   const filteredSuperinvestors = useMemo(() => {
     if (!superinvestorsData) return [];
     if (!trimmedSearch) return superinvestorsData;
 
     const lowerSearch = trimmedSearch.toLowerCase();
-    return superinvestorsData.filter(investor =>
+    return superinvestorsData.filter((investor: Superinvestor) =>
       investor.cik.toLowerCase().includes(lowerSearch) ||
       investor.cikName.toLowerCase().includes(lowerSearch)
     );

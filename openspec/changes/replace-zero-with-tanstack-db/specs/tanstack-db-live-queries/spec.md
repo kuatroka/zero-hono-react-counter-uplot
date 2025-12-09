@@ -3,6 +3,8 @@
 ## Purpose
 Define reactive local query patterns using TanStack DB's `useLiveQuery()` hook for instant, client-side data queries with sub-millisecond performance.
 
+**STATUS (2025-12-09)**: This spec was written but NEVER IMPLEMENTED. Components still use plain `useQuery` from `@tanstack/react-query` instead of `useLiveQuery` from `@tanstack/react-db`. See tasks.md section 10 for implementation steps.
+
 ## ADDED Requirements
 
 ### Requirement: Live Query Hook Usage

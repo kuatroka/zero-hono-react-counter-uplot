@@ -2,17 +2,27 @@
 
 The current Zero-sync architecture requires running a dedicated zero-cache server alongside the API and UI processes, adding significant operational complexity for a solo developer. Based on analysis in `docs/TANSTACK_DB_VS_ZERO_EVALUATION.md`, TanStack DB provides equivalent UX (sub-ms queries, optimistic updates, local caching) without the zero-cache server infrastructure. This greenfield project is read-heavy analytics with minimal real-time collaboration needs, making TanStack DB's simpler architecture a better fit.
 
+**UPDATE 2025-12-09**: Initial migration was incomplete. Collections were created but never instantiated or used. Components still use plain TanStack Query (`useQuery`) instead of TanStack DB (`useLiveQuery`), resulting in HTTP requests on every interaction instead of instant local queries. This update completes the migration by actually wiring up TanStack DB collections to components.
+
 ## What Changes
 
-- **BREAKING**: Remove `@rocicorp/zero` dependency and all Zero-related infrastructure
-- Replace Zero-sync queries with TanStack DB collections and `useLiveQuery()`
-- Remove zero-cache server process from development workflow (2 processes instead of 3)
-- Remove Zero schema generation (`zero/schema.ts`, `zero/schema.gen.ts`)
-- Remove Zero synced queries (`zero/queries.ts`)
-- Add TanStack DB collections with configurable sync modes (eager, on-demand, progressive)
-- Migrate pages to use `useLiveQuery()` for instant local queries
-- **PRESERVE**: Existing DuckDB global search functionality remains unchanged
-- **PRESERVE**: Hono API endpoints continue to serve data via existing patterns
+### Phase 1 (Completed)
+- **BREAKING**: Remove `@rocicorp/zero` dependency and all Zero-related infrastructure ✅
+- Remove zero-cache server process from development workflow (2 processes instead of 3) ✅
+- Remove Zero schema generation (`zero/schema.ts`, `zero/schema.gen.ts`) ✅
+- Remove Zero synced queries (`zero/queries.ts`) ✅
+- Create TanStack DB collection factories in `src/collections/` ✅
+- Create API endpoints for collections ✅
+- **PRESERVE**: Existing DuckDB global search functionality remains unchanged ✅
+- **PRESERVE**: Hono API endpoints continue to serve data via existing patterns ✅
+
+### Phase 2 (Missing - To Be Completed)
+- **Instantiate collections**: Call factory functions to create collection instances
+- **Replace `useQuery` with `useLiveQuery`**: Migrate all components from plain TanStack Query to TanStack DB
+- **Wire up local queries**: Query local TanStack DB collections instead of making HTTP requests
+- **Implement on-demand sync for drill-down**: First click loads from API, subsequent clicks query local collection (instant)
+- **Preload collections on app init**: Load assets, superinvestors, and quarterly data upfront for instant queries
+- **Remove "progressive" sync references**: TanStack DB only supports `eager` and `on-demand` modes
 
 ## Impact
 

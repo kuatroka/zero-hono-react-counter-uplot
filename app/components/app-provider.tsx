@@ -1,23 +1,25 @@
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { createAssetsCollection, createSuperinvestorsCollection } from "@/collections";
+import { useEffect } from "react";
+import { QueryClientProvider } from "@tanstack/react-query";
+import { queryClient, preloadCollections } from "@/collections";
 
-// Single QueryClient instance for TanStack Query and TanStack DB collections
-export const queryClient = new QueryClient({
-    defaultOptions: {
-        queries: {
-            staleTime: 5 * 60 * 1000, // 5 minutes
-            gcTime: 10 * 60 * 1000,   // 10 minutes
-        },
-    },
-});
+// Re-export for backward compatibility
+export { queryClient };
 
-// Initialize collections with the shared queryClient
-export const assetsCollection = createAssetsCollection(queryClient);
-export const superinvestorsCollection = createSuperinvestorsCollection(queryClient);
+// Preload collections on app init for instant queries
+function CollectionPreloader() {
+    useEffect(() => {
+        // Preload all eager collections on mount
+        // This triggers the initial fetch so data is ready for useLiveQuery
+        void preloadCollections();
+    }, []);
+    
+    return null;
+}
 
 export function AppProvider({ children }: { children: React.ReactNode }) {
     return (
         <QueryClientProvider client={queryClient}>
+            <CollectionPreloader />
             {children}
         </QueryClientProvider>
     );

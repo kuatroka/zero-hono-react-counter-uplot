@@ -42,12 +42,15 @@ The system SHALL support three sync modes to optimize data loading based on data
 - **AND** developers SHALL use `parseLoadSubsetOptions()` to extract query parameters
 - **AND** SHALL prevent accidental full dataset syncs for large tables (>50K rows)
 
-#### Scenario: Progressive sync mode
+#### Scenario: Progressive sync mode (DEPRECATED)
 
-- **WHEN** a collection is defined with `syncMode: 'progressive'`
-- **THEN** TanStack DB SHALL fetch a query subset immediately for instant first paint
-- **AND** SHALL sync the full dataset in the background
-- **AND** SHALL be best for collaborative apps needing instant first paint AND sub-millisecond queries
+**NOTE (2025-12-09)**: TanStack DB does NOT support `progressive` sync mode. Only `eager` and `on-demand` are available. This scenario is kept for historical reference but should not be implemented.
+
+- **WHEN** a collection needs instant first paint with background syncing
+- **THEN** use `on-demand` sync mode instead
+- **AND** first query will load data from API
+- **AND** subsequent queries will hit local collection (instant)
+- **AND** no background syncing occurs (not needed for analytics use case)
 
 ### Requirement: Assets Collection
 

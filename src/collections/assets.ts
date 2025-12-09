@@ -3,7 +3,7 @@ import { createCollection } from '@tanstack/db'
 import { queryCollectionOptions } from '@tanstack/query-db-collection'
 
 export interface Asset {
-    id?: string
+    id: string
     asset: string
     assetName: string
     cusip: string | null

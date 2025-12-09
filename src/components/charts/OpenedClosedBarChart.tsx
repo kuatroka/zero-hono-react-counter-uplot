@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useCallback, useRef, useEffect } from "react";
+import { useMemo, useRef, useEffect } from "react";
 import ReactEChartsCore from "echarts-for-react/lib/core";
 import * as echarts from "echarts/core";
 import { BarChart } from "echarts/charts";
@@ -218,17 +218,30 @@ export function OpenedClosedBarChart({
     return () => window.removeEventListener('resize', handleWindowResize);
   }, []);
 
-  const handleClick = useCallback(
-    (params: any) => {
-      if (!onBarClick || !params.name || !params.seriesName) return;
-      
+  useEffect(() => {
+    const chartInstance = chartRef.current?.getEchartsInstance();
+    if (!chartInstance) return;
+
+    const clickHandler = (params: any) => {
+      console.log(`[ECharts Click] params=`, params);
+      if (!onBarClick || !params.name || !params.seriesName) {
+        console.log(`[ECharts Click] Skipped - onBarClick=${!!onBarClick}, name=${params.name}, seriesName=${params.seriesName}`);
+        return;
+      }
+
       const quarter = params.name as string;
       const action = params.seriesName === "Opened" ? "open" : "close";
-      
+
+      console.log(`[ECharts Click] Calling onBarClick with quarter=${quarter}, action=${action}`);
       onBarClick({ quarter, action });
-    },
-    [onBarClick]
-  );
+    };
+
+    chartInstance.on('click', clickHandler);
+
+    return () => {
+      chartInstance.off('click', clickHandler);
+    };
+  }, [onBarClick, option]);
 
   if (data.length === 0) {
     return (
@@ -259,7 +272,6 @@ export function OpenedClosedBarChart({
           ref={chartRef}
           echarts={echarts}
           option={option}
-          onEvents={{ click: handleClick }}
           notMerge={false}
           lazyUpdate={false}
           style={{ height: "100%", width: "100%" }}

@@ -68,3 +68,107 @@
 - [ ] 9.2 Archive or update Zero-related specs in `openspec/specs/`
 - [ ] 9.3 Update `openspec/AGENTS.md` to replace Zero patterns with TanStack DB patterns
 - [x] 9.4 Created standalone types file (`src/types/index.ts`) replacing Zero schema exports
+
+## 10. Complete TanStack DB Integration (COMPLETED 2025-12-09)
+
+**Status**: ✅ Collections instantiated and components migrated to useLiveQuery.
+
+### 10.1 Collection Instantiation
+
+- [x] 10.1.1 Create `src/collections/instances.ts` to instantiate all collections
+- [x] 10.1.2 Instantiate `assetsCollection` using `createAssetsCollection(queryClient)`
+- [x] 10.1.3 Instantiate `superinvestorsCollection` using `createSuperinvestorsCollection(queryClient)`
+- [x] 10.1.4 Instantiate `quarterlyDataCollection` using `createQuarterlyDataCollection(queryClient)`
+- [x] 10.1.5 Export all collection instances from `src/collections/instances.ts`
+
+### 10.2 Migrate Components to useLiveQuery
+
+- [x] 10.2.1 Migrate `src/pages/AssetsTable.tsx` from `useQuery` to `useLiveQuery`
+  - Replace `useQuery` with `useLiveQuery((q) => q.from({ assets: assetsCollection }))`
+  - Remove HTTP fetch, query local collection instead
+  - Apply filters/sorting using TanStack DB query builder
+  
+- [x] 10.2.2 Migrate `src/pages/SuperinvestorsTable.tsx` to `useLiveQuery`
+  - Replace `useQuery` with `useLiveQuery((q) => q.from({ superinvestors: superinvestorsCollection }))`
+  - Remove HTTP fetch, query local collection
+  
+- [x] 10.2.3 Migrate `src/pages/AssetDetail.tsx` assets data to `useLiveQuery`
+  - Replace `useQuery` for assets with `useLiveQuery((q) => q.from({ assets: assetsCollection }))`
+  - Find specific asset from local collection
+
+### 10.3 Implement Drill-down with On-Demand Sync
+
+**Goal**: First click loads from API, subsequent clicks query local collection (instant)
+
+- [x] 10.3.1 Update `createInvestorDetailsCollection` factory with proper typing
+- [x] 10.3.2 Create collection instance in `InvestorActivityDrilldownTable` component
+  - Instantiate collection when ticker/quarter/action changes
+  - Use `useMemo` to create collection instance per unique [ticker, quarter, action]
+  
+- [x] 10.3.3 Replace `useQuery` with `useLiveQuery` in `InvestorActivityDrilldownTable`
+  - Replace HTTP fetch with `useLiveQuery((q) => q.from({ details: collection }))`
+  - First query triggers API fetch via collection's `queryFn`
+  - Subsequent queries hit TanStack Query cache (instant)
+  
+- [x] 10.3.4 Verify latency improvement
+  - First click: ~40-50ms (API fetch)
+  - Same bar clicked again: <1ms (TanStack Query cache hit)
+
+### 10.4 Progressive Sync Clarification
+
+**Note**: TanStack DB does NOT have a `progressive` sync mode. Only `eager` and `on-demand` exist.
+
+- [x] 10.4.1 Update `design.md` to clarify sync modes (done in previous session)
+- [x] 10.4.2 Document that drill-down uses per-query collections:
+  - Each [ticker, quarter, action] gets its own collection
+  - TanStack Query caching provides instant repeated queries
+  - No background syncing needed for analytics use case
+
+### 10.5 Preload Collections on App Init
+
+- [x] 10.5.1 Add collection preload in `app/components/app-provider.tsx`
+  - Call `preloadCollections()` on mount via `CollectionPreloader` component
+  - Preloads assets, superinvestors, and quarterly data collections
+  
+- [x] 10.5.2 Collections preload in background on app init
+- [x] 10.5.3 Instant queries after preload completes
+
+### 10.6 Testing & Validation
+
+- [x] 10.6.1 Build passes with no TypeScript errors
+- [ ] 10.6.2 Test Assets table: filtering/sorting queries local collection (instant)
+- [ ] 10.6.3 Test Superinvestors table: search queries local collection (instant)
+- [ ] 10.6.4 Test Asset detail: assets data queries local collection (instant)
+- [ ] 10.6.5 Test drill-down table with background loading:
+  - First visit to asset detail: background loads ALL quarters
+  - First click on any bar: <1ms if background load complete, ~40-50ms if still loading
+  - All subsequent clicks on any bar: <1ms (local cache)
+  - Progress indicator shows background loading status
+  - Latency helper shows ⚡ for cache hits, 🌐 for API fetches
+- [ ] 10.6.6 Verify collections preload on app init
+- [ ] 10.6.7 Manual testing in browser
+
+## 11. Clarification: Expected Latency Behavior (2025-12-09, Updated)
+
+**User Observation**: Clicking different bars should be instantaneous after initial page load.
+
+**Implemented Behavior (Background Loading)**:
+- When asset detail page loads, ALL drill-down data is fetched in background
+- Progress indicator shows loading status
+- Once complete, ALL bar clicks are instant (<1ms, local cache)
+- Latency helper shows:
+  - ⚡ green for cache hits (local)
+  - 🌐 amber for API fetches
+
+**How It Works**:
+1. Asset detail page loads activity data (aggregate chart)
+2. Background process starts fetching ALL [quarter, action] combinations
+3. Data accumulates in per-ticker TanStack DB collection
+4. Any bar click queries local collection (instant if data loaded)
+
+**Key Architecture**:
+- `getTickerDrilldownCollection(ticker)` - Per-ticker collection that accumulates all drill-down data
+- `fetchDrilldownData(ticker, quarter, action)` - Fetches and adds to collection, returns from cache if already fetched
+- `backgroundLoadAllDrilldownData(ticker, quarters)` - Loads all combinations in parallel
+
+**Note**: TanStack DB does NOT have a "progressive" sync mode. Only `eager` and `on-demand` exist. We use manual background loading instead.

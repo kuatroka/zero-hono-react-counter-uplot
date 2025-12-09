@@ -1,17 +1,11 @@
 import { useEffect, useRef, useState, useMemo } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useLiveQuery } from '@tanstack/react-db';
 import { Link, useNavigate, useSearch } from '@tanstack/react-router';
 import { DataTable, ColumnDef } from '@/components/DataTable';
 import { Card, CardContent } from '@/components/ui/card';
 import { AllAssetsActivityChart } from '@/components/charts/AllAssetsActivityChart';
 import { useContentReady } from '@/hooks/useContentReady';
-
-interface Asset {
-  id: string;
-  asset: string;
-  assetName: string;
-  cusip: string | null;
-}
+import { assetsCollection, type Asset } from '@/collections';
 
 const ASSETS_TOTAL_ROWS = 32000;
 
@@ -58,25 +52,20 @@ export function AssetsTablePage() {
     isTypingRef.current = false;
   }, [searchTerm, navigate]);
 
-  // Use TanStack Query to fetch assets data directly from API
-  // This is a transitional approach while TanStack DB collections are being set up
-  const { data: assetsData, isLoading } = useQuery({
-    queryKey: ['assets'],
-    queryFn: async () => {
-      const res = await fetch('/api/assets');
-      if (!res.ok) throw new Error('Failed to fetch assets');
-      return res.json() as Promise<Asset[]>;
-    },
-    staleTime: 5 * 60 * 1000, // 5 minutes
-  });
+  // Use TanStack DB useLiveQuery for instant local queries
+  // Data is preloaded on app init, so queries execute against local collection
+  const { data: assetsData, isLoading } = useLiveQuery(
+    (q) => q.from({ assets: assetsCollection }),
+  );
 
   // Filter assets client-side based on search term
+  // This filtering happens instantly against local data
   const filteredAssets = useMemo(() => {
     if (!assetsData) return [];
     if (!trimmedSearch) return assetsData;
 
     const lowerSearch = trimmedSearch.toLowerCase();
-    return assetsData.filter(asset =>
+    return assetsData.filter((asset: Asset) =>
       asset.asset.toLowerCase().includes(lowerSearch) ||
       asset.assetName.toLowerCase().includes(lowerSearch)
     );

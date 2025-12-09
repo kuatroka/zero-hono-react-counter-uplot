@@ -7,7 +7,7 @@ import duckdbInvestorDrilldownRoutes from "./routes/duckdb-investor-drilldown";
 import allAssetsActivityRoutes from "./routes/all-assets-activity";
 import assetsRoutes from "./routes/assets";
 import superinvestorsRoutes from "./routes/superinvestors";
-import quarterlyDataRoutes from "./routes/quarterly-data";
+import investorFlowRoutes from "./routes/investor-flow";
 
 export const config = {
   runtime: "edge",
@@ -22,7 +22,7 @@ app.route("/duckdb-investor-drilldown", duckdbInvestorDrilldownRoutes);
 app.route("/all-assets-activity", allAssetsActivityRoutes);
 app.route("/assets", assetsRoutes);
 app.route("/superinvestors", superinvestorsRoutes);
-app.route("/quarterly-data", quarterlyDataRoutes);
+app.route("/investor-flow", investorFlowRoutes);
 
 // See seed.sql
 // In real life you would of course authenticate the user however you like.

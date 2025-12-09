@@ -1,32 +1,14 @@
-import { useMemo } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useMemo, useEffect, useState, useCallback } from "react";
 import { Link } from "@tanstack/react-router";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { DataTable, ColumnDef } from "@/components/DataTable";
+import { 
+  fetchDrilldownData, 
+  type InvestorDetail 
+} from "@/collections/investor-details";
+import { queryClient } from "@/collections/instances";
 
 type InvestorActivityAction = "open" | "close";
-
-interface DuckDBDrilldownRow {
-  cusip: string | null;
-  quarter: string | null;
-  cik: number | null;
-  didOpen: boolean | null;
-  didAdd: boolean | null;
-  didReduce: boolean | null;
-  didClose: boolean | null;
-  didHold: boolean | null;
-  cikName: string | null;
-  cikTicker: string | null;
-}
-
-interface DuckDBDrilldownResponse {
-  ticker: string;
-  quarter: string;
-  action: InvestorActivityAction;
-  count: number;
-  queryTimeMs: number;
-  rows: DuckDBDrilldownRow[];
-}
 
 interface InvestorActivityDrilldownRow {
   id: number;
@@ -34,7 +16,7 @@ interface InvestorActivityDrilldownRow {
   cikName: string;
   cikTicker: string;
   cusip: string | null;
-  quarter: string | null;
+  quarter: string;
   action: InvestorActivityAction;
 }
 
@@ -44,45 +26,56 @@ interface InvestorActivityDrilldownTableProps {
   action: InvestorActivityAction;
 }
 
-async function fetchDrilldown(
-  ticker: string,
-  quarter: string,
-  action: InvestorActivityAction
-): Promise<DuckDBDrilldownResponse> {
-  const params = new URLSearchParams({ ticker, quarter, action });
-  const res = await fetch(`/api/duckdb-investor-drilldown?${params.toString()}`);
-  if (!res.ok) {
-    throw new Error(`Drilldown request failed with status ${res.status}`);
-  }
-  return res.json();
-}
-
 export function InvestorActivityDrilldownTable({
   ticker,
   quarter,
   action,
 }: InvestorActivityDrilldownTableProps) {
   const enabled = Boolean(ticker && quarter);
+  
+  // State for data, loading, and timing
+  const [data, setData] = useState<InvestorDetail[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [isError, setIsError] = useState(false);
+  const [queryTimeMs, setQueryTimeMs] = useState<number | null>(null);
+  const [fromCache, setFromCache] = useState(false);
+  
+  // Fetch data when ticker/quarter/action changes
+  const fetchData = useCallback(async () => {
+    if (!enabled) return;
+    
+    setIsLoading(true);
+    setIsError(false);
+    
+    try {
+      const result = await fetchDrilldownData(queryClient, ticker, quarter, action);
+      setData(result.rows);
+      setQueryTimeMs(result.queryTimeMs);
+      setFromCache(result.fromCache);
+    } catch (err) {
+      console.error("Failed to fetch drilldown data:", err);
+      setIsError(true);
+      setData([]);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [enabled, ticker, quarter, action]);
+  
+  // Fetch on mount and when dependencies change
+  useEffect(() => {
+    fetchData();
+  }, [fetchData]);
 
-  const { data, isLoading, isFetching, isError, error } = useQuery({
-    queryKey: ["duckdb-investor-drilldown", ticker, quarter, action],
-    queryFn: () => fetchDrilldown(ticker, quarter, action),
-    enabled,
-    staleTime: 5 * 60 * 1000,
-    gcTime: 10 * 60 * 1000,
-    placeholderData: (previousData) => previousData,
-  });
-
-  const rows: InvestorActivityDrilldownRow[] = useMemo(() => {
-    if (!data?.rows) return [];
-    return data.rows.map((row, index) => ({
+  // Transform data to display format
+  const rows = useMemo(() => {
+    return data.map((item: InvestorDetail, index: number) => ({
       id: index,
-      cik: row.cik != null ? String(row.cik) : "",
-      cikName: row.cikName ?? "",
-      cikTicker: row.cikTicker ?? "",
-      cusip: row.cusip ?? null,
-      quarter: row.quarter ?? null,
-      action: data.action,
+      cik: item.cik,
+      cikName: item.cikName,
+      cikTicker: item.cikTicker,
+      cusip: item.cusip,
+      quarter: item.quarter,
+      action: item.action,
     }));
   }, [data]);
 
@@ -131,33 +124,41 @@ export function InvestorActivityDrilldownTable({
     return null;
   }
 
-  const totalCount = data?.count ?? rows.length;
-
+  const totalCount = rows.length;
   const titleAction = action === "open" ? "opened" : "closed";
   const hasRows = rows.length > 0;
   const isInitialLoading = isLoading && !hasRows;
-  const hasPreviousData = data !== undefined;
+  const hasData = data.length > 0 || !isLoading;
+
+  // Format latency display
+  const latencyDisplay = (() => {
+    if (queryTimeMs === null) return null;
+    if (fromCache) {
+      return <span className="text-green-600 font-medium">⚡ {queryTimeMs.toFixed(1)}ms (local cache)</span>;
+    }
+    return <span className="text-amber-600 font-medium">🌐 {queryTimeMs.toFixed(1)}ms (API fetch)</span>;
+  })();
 
   return (
     <Card>
       <CardHeader>
-        <CardTitle>
-          Superinvestors who {titleAction} positions in {ticker} ({quarter})
+        <CardTitle className="flex items-center justify-between">
+          <span>Superinvestors who {titleAction} positions in {ticker} ({quarter})</span>
         </CardTitle>
-        <CardDescription>
-          Backed by DuckDB native drilldown. {typeof data?.queryTimeMs === "number" &&
-            `Query time: ${data.queryTimeMs.toFixed(1)}ms`}
+        <CardDescription className="flex items-center justify-between">
+          <span>Backed by TanStack DB local collection</span>
+          {latencyDisplay}
         </CardDescription>
       </CardHeader>
       <CardContent>
-        <div className="relative min-h-[360px]" aria-busy={isInitialLoading || isFetching}>
+        <div className="relative min-h-[360px]" aria-busy={isInitialLoading}>
           {isInitialLoading ? (
             <div className="flex h-full items-center justify-center py-8 text-muted-foreground">
               Loading drilldown…
             </div>
           ) : isError ? (
             <div className="flex h-full items-center justify-center py-8 text-center text-destructive text-sm">
-              Failed to load drilldown: {(error as Error)?.message ?? "Unknown error"}
+              Failed to load drilldown data
             </div>
           ) : hasRows ? (
             <DataTable
@@ -169,7 +170,7 @@ export function InvestorActivityDrilldownTable({
               defaultSortDirection="asc"
               totalCount={totalCount}
             />
-          ) : hasPreviousData ? (
+          ) : hasData ? (
             <div className="flex h-full flex-col items-center justify-center py-8 text-center text-muted-foreground space-y-2">
               <p className="font-medium">No detailed data available for this selection.</p>
               <p className="text-sm">
@@ -179,12 +180,6 @@ export function InvestorActivityDrilldownTable({
           ) : (
             <div className="flex h-full items-center justify-center py-8 text-muted-foreground">
               No superinvestors found for this selection.
-            </div>
-          )}
-
-          {isFetching && hasRows && (
-            <div className="absolute inset-0 flex items-center justify-center bg-background/70 backdrop-blur-sm text-sm text-muted-foreground">
-              Refreshing drilldown…
             </div>
           )}
         </div>

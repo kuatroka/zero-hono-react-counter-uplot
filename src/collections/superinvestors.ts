@@ -3,6 +3,7 @@ import { createCollection } from '@tanstack/db'
 import { queryCollectionOptions } from '@tanstack/query-db-collection'
 
 export interface Superinvestor {
+    id: string
     cik: string
     cikName: string
 }
