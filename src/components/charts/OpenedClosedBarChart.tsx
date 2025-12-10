@@ -9,6 +9,7 @@ import {
   TooltipComponent,
   MarkLineComponent,
 } from "echarts/components";
+import { LegacyGridContainLabel } from "echarts/features";
 import { CanvasRenderer } from "echarts/renderers";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import type { QuarterlyActivityPoint } from "@/types/duckdb";
@@ -20,7 +21,36 @@ echarts.use([
   TooltipComponent,
   MarkLineComponent,
   CanvasRenderer,
+  LegacyGridContainLabel,
 ]);
+
+// Patch echarts-for-react unmount to be resilient in React 18 StrictMode double-invoke
+const proto = (ReactEChartsCore as any)?.prototype;
+if (proto && !proto.__strictPatched) {
+  const originalUnmount = proto.componentWillUnmount;
+  proto.componentWillUnmount = function (...args: any[]) {
+    try {
+      if (this.resizeObserver && typeof this.resizeObserver.disconnect === "function") {
+        this.resizeObserver.disconnect();
+      }
+    } catch (err) {
+      // ignore StrictMode double-dispose
+    }
+    try {
+      if (this.echartsInstance && typeof this.echartsInstance.isDisposed === "function") {
+        if (!this.echartsInstance.isDisposed()) {
+          this.echartsInstance.dispose();
+        }
+      } else if (this.echartsInstance) {
+        this.echartsInstance.dispose();
+      }
+    } catch (err) {
+      // ignore
+    }
+    return originalUnmount?.apply(this, args);
+  };
+  proto.__strictPatched = true;
+}
 
 interface OpenedClosedBarChartProps {
   /** Array of quarterly data points with opened/closed counts */
@@ -122,14 +152,14 @@ export function OpenedClosedBarChart({
         min: -maxDomain,
         max: maxDomain,
         splitNumber: 6,
-        axisLabel: {
-          formatter: (value: number) => {
-            const absValue = Math.abs(value);
-            if (Math.abs(absValue - maxDomain) < maxDomain * 0.05) return '';
-            return absValue.toString();
+          axisLabel: {
+            formatter: (value: number) => {
+              const absValue = Math.abs(value);
+              if (Math.abs(absValue - maxDomain) < maxDomain * 0.05) return '';
+              return absValue.toString();
+            },
+            margin: 8,
           },
-          margin: 8,
-        },
         splitLine: {
           lineStyle: {
             type: "dashed",
@@ -176,48 +206,6 @@ export function OpenedClosedBarChart({
     };
   }, [chartData, unitLabel]);
 
-  // Smooth resize handling with ResizeObserver
-  useEffect(() => {
-    const chartInstance = chartRef.current?.getEchartsInstance();
-    if (!chartInstance) return;
-
-    const container = chartRef.current?.ele;
-    if (!container) return;
-
-    const resizeObserver = new ResizeObserver(() => {
-      if (rafRef.current !== null) {
-        cancelAnimationFrame(rafRef.current);
-      }
-      rafRef.current = requestAnimationFrame(() => {
-        rafRef.current = null;
-        chartInstance.resize({ animation: { duration: 0 } });
-      });
-    });
-
-    resizeObserver.observe(container);
-
-    return () => {
-      resizeObserver.disconnect();
-      if (rafRef.current !== null) {
-        cancelAnimationFrame(rafRef.current);
-        rafRef.current = null;
-      }
-    };
-  }, [option]);
-
-  // Window resize handler
-  useEffect(() => {
-    const handleWindowResize = () => {
-      const chartInstance = chartRef.current?.getEchartsInstance();
-      if (chartInstance) {
-        chartInstance.resize({ animation: { duration: 0 } });
-      }
-    };
-
-    window.addEventListener('resize', handleWindowResize);
-    return () => window.removeEventListener('resize', handleWindowResize);
-  }, []);
-
   useEffect(() => {
     const chartInstance = chartRef.current?.getEchartsInstance();
     if (!chartInstance) return;
@@ -239,7 +227,13 @@ export function OpenedClosedBarChart({
     chartInstance.on('click', clickHandler);
 
     return () => {
-      chartInstance.off('click', clickHandler);
+      try {
+        if (!chartInstance.isDisposed || !chartInstance.isDisposed()) {
+          chartInstance.off('click', clickHandler);
+        }
+      } catch {
+        // ignore
+      }
     };
   }, [onBarClick, option]);
 

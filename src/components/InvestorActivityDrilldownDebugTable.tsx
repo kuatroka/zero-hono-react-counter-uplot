@@ -1,10 +1,10 @@
 "use client";
 
 import { useMemo } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useLiveQuery } from "@tanstack/react-db";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { DataTable, type ColumnDef } from "@/components/DataTable";
-import { getTickerDrilldownQueryKey, type InvestorDetail } from "@/collections/investor-details";
+import { investorDrilldownCollection, type InvestorDetail } from "@/collections/investor-details";
 
 interface DebugDrilldownRow {
   id: number;
@@ -24,22 +24,14 @@ export function InvestorActivityDrilldownDebugTable({
 }: InvestorActivityDrilldownDebugTableProps) {
   if (!import.meta.env.DEV) return null;
 
-  const queryClient = useQueryClient();
-
-  // Subscribe to the React Query cache for this ticker's drilldown data
-  const { data } = useQuery<InvestorDetail[]>({
-    queryKey: getTickerDrilldownQueryKey(ticker),
-    queryFn: () => {
-      // Data is already in cache, just return it
-      return queryClient.getQueryData<InvestorDetail[]>(getTickerDrilldownQueryKey(ticker)) ?? []
-    },
-    // Refetch every second to pick up background-loaded data
-    refetchInterval: 1000,
-    initialData: [],
-  });
+  const live = useLiveQuery((q) =>
+    q
+      .from({ rows: investorDrilldownCollection })
+      .select(({ rows }) => rows)
+  );
 
   const rows: DebugDrilldownRow[] = useMemo(() => {
-    const source: InvestorDetail[] = data ?? [];
+    const source: InvestorDetail[] = (live?.data ?? []).filter((r) => r.ticker === ticker);
     return source.map((item, index) => ({
       id: index,
       quarter: item.quarter,
@@ -48,7 +40,7 @@ export function InvestorActivityDrilldownDebugTable({
       cikName: item.cikName,
       cusip: item.cusip,
     }));
-  }, [data]);
+  }, [live]);
 
   const columns: ColumnDef<DebugDrilldownRow>[] = useMemo(
     () => [

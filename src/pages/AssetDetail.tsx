@@ -1,16 +1,15 @@
 import { useParams, Link } from '@tanstack/react-router';
-import { useQuery } from '@tanstack/react-query';
 import { useLiveQuery } from '@tanstack/react-db';
+import { useQuery } from '@tanstack/react-query';
 
 import { InvestorActivityUplotChart } from '@/components/charts/InvestorActivityUplotChart';
 import { InvestorActivityEchartsChart } from '@/components/charts/InvestorActivityEchartsChart';
 import { InvestorFlowChart } from '@/components/charts/InvestorFlowChart';
 import { InvestorActivityDrilldownTable } from '@/components/InvestorActivityDrilldownTable';
-import { InvestorActivityDrilldownDebugTable } from '@/components/InvestorActivityDrilldownDebugTable';
 import { useContentReady } from '@/hooks/useContentReady';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { assetsCollection, queryClient } from '@/collections';
-import { backgroundLoadAllDrilldownData, fetchDrilldownData } from '@/collections/investor-details';
+import { assetsCollection } from '@/collections';
+import { backgroundLoadAllDrilldownData, fetchDrilldownData, fetchDrilldownBothActions } from '@/collections/investor-details';
 
 import { type CusipQuarterInvestorActivity, type InvestorFlow } from '@/schema';
 
@@ -68,10 +67,25 @@ export function AssetDetailPage() {
   const { data: flowData, isLoading: isFlowLoading } = useQuery({
     queryKey: ['investor-flow', hasCusip ? cusip : code],
     queryFn: async () => {
-      const res = await fetch(`/api/investor-flow?ticker=${hasCusip && cusip ? cusip : code}`);
-      if (!res.ok) throw new Error('Failed to fetch investor flow');
-      const data = await res.json();
-      return (data.rows || []) as InvestorFlow[];
+      const t0 = performance.now();
+      const url = hasCusip
+        ? `/api/investor-flow?cusip=${cusip}`
+        : `/api/investor-flow?ticker=${code}`;
+      try {
+        const res = await fetch(url);
+        if (!res.ok) {
+          const text = await res.text();
+          console.warn(`[InvestorFlow] ${url} returned ${res.status}: ${text}`);
+          return [] as InvestorFlow[];
+        }
+        const data = await res.json();
+        const rows = (data.rows || []) as InvestorFlow[];
+        console.debug(`[InvestorFlow] fetched ${rows.length} rows for ${hasCusip ? cusip : code} in ${Math.round(performance.now() - t0)}ms`, rows.slice(0, 3));
+        return rows;
+      } catch (err) {
+        console.warn(`[InvestorFlow] failed for ${url}:`, err);
+        return [] as InvestorFlow[];
+      }
     },
     enabled: Boolean(code),
     staleTime: 5 * 60 * 1000,
@@ -161,15 +175,16 @@ export function AssetDetailPage() {
     
     // Eagerly load BOTH actions for the latest quarter to make clicks instant
     if (latestQuarter && code) {
-      console.log(`[Eager Load] Fetching both open and close for ${latestQuarter}`);
-      Promise.all([
-        fetchDrilldownData(queryClient, code, latestQuarter, 'open'),
-        fetchDrilldownData(queryClient, code, latestQuarter, 'close'),
-      ]).then(() => {
-        console.log(`[Eager Load] Both actions loaded for ${latestQuarter}`);
-      }).catch(err => {
-        console.error('[Eager Load] Failed:', err);
-      });
+      const eagerStart = performance.now();
+      console.log(`[Eager Load] Fetching both open and close for ${latestQuarter} in single call`);
+      fetchDrilldownBothActions(code, latestQuarter)
+        .then(({ rows, queryTimeMs }) => {
+          const eagerWallMs = Math.round(performance.now() - eagerStart);
+          console.log(`[Eager Load] Both actions loaded for ${latestQuarter}: wall=${eagerWallMs}ms, net=${queryTimeMs}ms, rows=${rows.length}`);
+        })
+        .catch(err => {
+          console.error('[Eager Load] Failed:', err);
+        });
     }
   }, [selection, activityRows, code]);
 
@@ -180,30 +195,19 @@ export function AssetDetailPage() {
     
     backgroundLoadStartedRef.current = true;
     
-    const allQuarters = activityRows.map(row => row.quarter).filter((q): q is string => q != null);
-    
-    if (allQuarters.length === 0) {
-      console.log(`[Background Load] No quarters to load`);
-      setBackgroundLoadProgress({ loaded: 0, total: 0 });
-      return;
-    }
-    
-    // Get the latest quarter (most likely to be clicked)
-    const latestQuarter = allQuarters[0]; // Assuming quarters are sorted descending
-    const remainingQuarters = allQuarters.filter(q => q !== latestQuarter);
-    
     // Delay background loading to let the table fetch its data first
     const timeoutId = setTimeout(() => {
-      console.log(`[Background Load] Starting for ${code} - loading both actions for ${latestQuarter}, then ${remainingQuarters.length} remaining quarters`);
-      
+      const bgStart = performance.now();
+      console.log(`[Background Load] Starting bulk fetch for ${code}`);
+
       backgroundLoadAllDrilldownData(
-        queryClient,
         code,
-        remainingQuarters, // Load remaining quarters (latest is already fully loaded)
+        [], // empty list triggers full bulk load (route capped to 5000 rows)
         (loaded, total) => {
           setBackgroundLoadProgress({ loaded, total });
           if (loaded === total) {
-            console.log(`[Background Load] Complete for ${code}: ${total} combinations loaded`);
+            const bgMs = Math.round(performance.now() - bgStart);
+            console.log(`[Background Load] Complete for ${code}: bulk fetch done in ${bgMs}ms`);
           }
         }
       ).catch(err => {
@@ -307,10 +311,6 @@ export function AssetDetailPage() {
                 <div className="py-8 text-center text-muted-foreground">
                   Select a bar in the chart to see which superinvestors opened or closed positions.
                 </div>
-              )}
-
-              {import.meta.env.DEV && (
-                <InvestorActivityDrilldownDebugTable ticker={record.asset} />
               )}
             </div>
           </>

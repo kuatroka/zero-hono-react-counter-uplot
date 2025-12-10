@@ -27,6 +27,7 @@ export const queryClient = new QueryClient({
 // Singleton collection instances for eager-synced data
 export const assetsCollection = createAssetsCollection(queryClient);
 export const superinvestorsCollection = createSuperinvestorsCollection(queryClient);
+// investorDrilldownCollection is created in investor-details.ts and uses this same queryClient
 
 // Re-export types for convenience
 export type { Asset, Superinvestor, InvestorDetail };

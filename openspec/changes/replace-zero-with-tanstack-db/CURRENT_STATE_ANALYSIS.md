@@ -1,4 +1,4 @@
-# Current State Analysis (2025-12-09 - Updated)
+# Current State Analysis (2025-12-10 - Updated)
 
 ## Executive Summary
 
@@ -198,6 +198,15 @@ Convert drill-down to use TanStack DB collections for consistency.
 
 ### 3. Update Documentation
 Update `tasks.md` to reflect:
+
+## Migration Steps Completed (2025-12-10)
+- Swapped drill-down storage to a TanStack DB collection (`investorDrilldownCollection`) with `writeUpsert`, so `useLiveQuery` now reads directly from the local DB instead of React Query’s cache.
+- Added eager load path that writes both open/close rows for the initially selected quarter into the collection and logs wall time, per-request max latency, and row count.
+- Added bulk background loader: one call to `/api/duckdb-investor-drilldown?ticker=<T>&quarter=all&action=both&limit=50000`, upserts all rows, and marks every quarter/action combination as cached.
+- Fixed DuckDB API route to accept `quarter=all`/`action=both` and wrapped UNION in parentheses to avoid parser errors.
+- Investor flow API accepts `ticker` or `cusip`; client prefers `cusip` when present and soft-fails to empty data on API error.
+- Logging improvements: eager vs. background wall times, rows fetched, combinations loaded; debug table shows cache status.
+- Chart component cleanup: removed custom `useResizeObserver` prop and redundant manual resize hooks to reduce ECharts dispose warnings (still monitoring in Strict Mode).
 - Drill-down uses custom React Query cache pattern (not TanStack DB)
 - SuperinvestorDetail needs migration
 - Background loading is complete and working

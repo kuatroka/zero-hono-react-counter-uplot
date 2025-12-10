@@ -1,12 +1,14 @@
 import { useMemo, useEffect, useState, useCallback } from "react";
 import { Link } from "@tanstack/react-router";
+import { useLiveQuery } from "@tanstack/react-db";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { DataTable, ColumnDef } from "@/components/DataTable";
-import { 
-  fetchDrilldownData, 
-  type InvestorDetail 
+import {
+  fetchDrilldownData,
+  getDrilldownDataFromCollection,
+  investorDrilldownCollection,
+  type InvestorDetail
 } from "@/collections/investor-details";
-import { queryClient } from "@/collections/instances";
 
 type InvestorActivityAction = "open" | "close";
 
@@ -32,42 +34,79 @@ export function InvestorActivityDrilldownTable({
   action,
 }: InvestorActivityDrilldownTableProps) {
   const enabled = Boolean(ticker && quarter);
-  
+
   // State for data, loading, and timing
   const [data, setData] = useState<InvestorDetail[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isError, setIsError] = useState(false);
   const [queryTimeMs, setQueryTimeMs] = useState<number | null>(null);
   const [fromCache, setFromCache] = useState(false);
-  
-  // Fetch data when ticker/quarter/action changes
-  const fetchData = useCallback(async () => {
+
+  // Subscribe to the collection for this slice
+  const slice = useLiveQuery((q) =>
+    q
+      .from({ rows: investorDrilldownCollection })
+      .select(({ rows }) => rows)
+  );
+
+  // Fetch if missing; otherwise use local slice instantly
+  useEffect(() => {
     if (!enabled) return;
-    
+
+    const localRows = getDrilldownDataFromCollection(ticker, quarter, action);
+    if (localRows) {
+      setData(localRows);
+      setQueryTimeMs(0);
+      setFromCache(true);
+      return;
+    }
+
+    let cancelled = false;
     setIsLoading(true);
     setIsError(false);
-    
-    try {
-      const result = await fetchDrilldownData(queryClient, ticker, quarter, action);
-      setData(result.rows);
-      setQueryTimeMs(result.queryTimeMs);
-      setFromCache(result.fromCache);
-    } catch (err) {
-      console.error("Failed to fetch drilldown data:", err);
-      setIsError(true);
-      setData([]);
-    } finally {
-      setIsLoading(false);
-    }
+
+    fetchDrilldownData(ticker, quarter, action)
+      .then((result) => {
+        if (cancelled) return;
+        setData(result.rows);
+        setQueryTimeMs(result.queryTimeMs);
+        setFromCache(result.fromCache);
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        console.error("Failed to fetch drilldown data:", err);
+        setIsError(true);
+        setData([]);
+      })
+      .finally(() => {
+        if (cancelled) return;
+        setIsLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
   }, [enabled, ticker, quarter, action]);
-  
-  // Fetch on mount and when dependencies change
+
+  // Keep data in sync with live query (instant updates once present)
   useEffect(() => {
-    fetchData();
-  }, [fetchData]);
+    if (slice?.data && slice.data.length > 0) {
+      const filtered = slice.data.filter(
+        (r) => r.ticker === ticker && r.quarter === quarter && r.action === action
+      );
+      if (filtered.length > 0) {
+        setData(filtered);
+        setFromCache(true);
+        if (queryTimeMs === null) setQueryTimeMs(0);
+      }
+    }
+  }, [slice, queryTimeMs]);
 
   // Transform data to display format
   const rows = useMemo(() => {
+    console.debug(
+      `[DrilldownTable] rendering ${data.length} rows for ${ticker} ${quarter} ${action}`
+    );
     return data.map((item: InvestorDetail, index: number) => ({
       id: index,
       cik: item.cik,
