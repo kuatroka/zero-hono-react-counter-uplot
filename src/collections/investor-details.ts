@@ -3,7 +3,7 @@ import { queryCollectionOptions } from '@tanstack/query-db-collection'
 import { queryClient } from './instances'
 
 export interface InvestorDetail {
-    id: string  // Unique key: ticker-quarter-action-cik
+    id: string  // Unique key: cusip-quarter-action-cik
     ticker: string
     cik: string
     cikName: string
@@ -36,29 +36,30 @@ function getAllDrilldownRows(): InvestorDetail[] {
     return Array.from(investorDrilldownCollection.entries()).map(([, value]) => value)
 }
 
-// Track which [ticker, quarter, action] combinations have been fetched
+// Track which [ticker, cusip, quarter, action] combinations have been fetched
 const fetchedCombinations = new Set<string>()
 
 /**
- * Check if data for a specific [ticker, quarter, action] has been fetched
+ * Check if data for a specific [ticker, cusip, quarter, action] has been fetched
  */
-export function hasFetchedDrilldownData(ticker: string, quarter: string, action: 'open' | 'close'): boolean {
-    return fetchedCombinations.has(`${ticker}-${quarter}-${action}`)
+export function hasFetchedDrilldownData(ticker: string, cusip: string, quarter: string, action: 'open' | 'close'): boolean {
+    return fetchedCombinations.has(`${ticker}-${cusip}-${quarter}-${action}`)
 }
 
 /**
- * Fetch drill-down data for a specific [ticker, quarter, action] and add it to the TanStack DB collection.
+ * Fetch drill-down data for a specific [ticker, cusip, quarter, action] and add it to the TanStack DB collection.
  * Returns the fetched rows and query time.
  */
 export async function fetchDrilldownData(
     ticker: string,
+    cusip: string,
     quarter: string,
     action: 'open' | 'close'
 ): Promise<{ rows: InvestorDetail[], queryTimeMs: number, fromCache: boolean }> {
-    const cacheKey = `${ticker}-${quarter}-${action}`
+    const cacheKey = `${ticker}-${cusip}-${quarter}-${action}`
 
     // Check if we already have the data in the collection
-    const cachedRows = getAllDrilldownRows().filter((item) => item.ticker === ticker && item.quarter === quarter && item.action === action)
+    const cachedRows = getAllDrilldownRows().filter((item) => item.ticker === ticker && item.cusip === cusip && item.quarter === quarter && item.action === action)
     if (cachedRows.length > 0) {
         fetchedCombinations.add(cacheKey)
         return { rows: cachedRows, queryTimeMs: 0, fromCache: true }
@@ -73,6 +74,7 @@ export async function fetchDrilldownData(
 
     const searchParams = new URLSearchParams()
     searchParams.set('ticker', ticker)
+    searchParams.set('cusip', cusip)
     searchParams.set('quarter', quarter)
     searchParams.set('action', action)
 
@@ -83,14 +85,14 @@ export async function fetchDrilldownData(
     const queryTimeMs = performance.now() - startTime
 
     // Transform API response to InvestorDetail format
-    const rows: InvestorDetail[] = (data.rows || []).map((row: any, index: number) => ({
-        id: `${ticker}-${quarter}-${action}-${row.cik ?? index}`,
+    const rows: InvestorDetail[] = (data.rows || []).map((row: any) => ({
+        id: `${cusip ?? row.cusip ?? 'nocusip'}-${quarter}-${action}-${row.cik ?? 'nocik'}`,
         ticker,
         cik: row.cik != null ? String(row.cik) : '',
         cikName: row.cikName ?? '',
         cikTicker: row.cikTicker ?? '',
         quarter: row.quarter ?? quarter,
-        cusip: row.cusip ?? null,
+        cusip: row.cusip ?? cusip ?? null,
         action,
         didOpen: row.didOpen ?? null,
         didAdd: row.didAdd ?? null,
@@ -122,7 +124,7 @@ export async function fetchDrilldownData(
 
     fetchedCombinations.add(cacheKey)
 
-    const finalRows = getAllDrilldownRows().filter((item) => item.ticker === ticker && item.quarter === quarter && item.action === action)
+    const finalRows = getAllDrilldownRows().filter((item) => item.ticker === ticker && item.cusip === cusip && item.quarter === quarter && item.action === action)
     return { rows: finalRows, queryTimeMs, fromCache: false }
 }
 
@@ -132,12 +134,14 @@ export async function fetchDrilldownData(
  */
 export async function fetchDrilldownBothActions(
     ticker: string,
+    cusip: string,
     quarter: string,
 ): Promise<{ rows: InvestorDetail[], queryTimeMs: number }> {
     const startTime = performance.now()
 
     const searchParams = new URLSearchParams()
     searchParams.set('ticker', ticker)
+    searchParams.set('cusip', cusip)
     searchParams.set('quarter', quarter)
     searchParams.set('action', 'both')
     searchParams.set('limit', '2000')
@@ -146,16 +150,17 @@ export async function fetchDrilldownBothActions(
     if (!res.ok) throw new Error('Failed to fetch investor details (both actions)')
     const data = await res.json()
 
-    const rows: InvestorDetail[] = (data.rows || []).map((row: any, index: number) => {
+    const rows: InvestorDetail[] = (data.rows || []).map((row: any) => {
         const action: 'open' | 'close' = row.action === 'close' ? 'close' : 'open'
+        const rowCusip = row.cusip ?? cusip
         return {
-            id: `${ticker}-${row.quarter ?? quarter}-${action}-${row.cik ?? index}`,
+            id: `${rowCusip ?? 'nocusip'}-${row.quarter ?? quarter}-${action}-${row.cik ?? 'nocik'}`,
             ticker,
             cik: row.cik != null ? String(row.cik) : '',
             cikName: row.cikName ?? '',
             cikTicker: row.cikTicker ?? '',
             quarter: row.quarter ?? quarter,
-            cusip: row.cusip ?? null,
+            cusip: rowCusip ?? null,
             action,
             didOpen: row.didOpen ?? null,
             didAdd: row.didAdd ?? null,
@@ -172,58 +177,63 @@ export async function fetchDrilldownBothActions(
     }
 
     // Mark both combinations as fetched
-    fetchedCombinations.add(`${ticker}-${quarter}-open`)
-    fetchedCombinations.add(`${ticker}-${quarter}-close`)
+    fetchedCombinations.add(`${ticker}-${cusip}-${quarter}-open`)
+    fetchedCombinations.add(`${ticker}-${cusip}-${quarter}-close`)
 
     const elapsedMs = Math.round(performance.now() - startTime)
     return { rows, queryTimeMs: elapsedMs }
 }
 
 /**
- * Background load all drill-down data for a ticker.
+ * Background load all drill-down data for a ticker and cusip.
  * Bulk fetches ALL quarters/actions in a single request for speed.
  */
 export async function backgroundLoadAllDrilldownData(
     ticker: string,
+    cusip: string,
     quarters: string[],
     onProgress?: (loaded: number, total: number) => void
 ): Promise<void> {
     // Seed fetched set with existing collection rows to avoid refetching on refresh
     for (const row of getAllDrilldownRows()) {
-        fetchedCombinations.add(`${row.ticker}-${row.quarter}-${row.action}`)
+        fetchedCombinations.add(`${row.ticker}-${row.cusip}-${row.quarter}-${row.action}`)
     }
 
     // Bulk load everything in one call (fastest overall; route caps rows to keep payload reasonable)
     const startMs = performance.now()
     const searchParams = new URLSearchParams()
     searchParams.set('ticker', ticker)
+    searchParams.set('cusip', cusip)
     searchParams.set('quarter', 'all')
     searchParams.set('action', 'both')
     searchParams.set('limit', '5000') // route caps at 5000 rows
 
     const res = await fetch(`/api/duckdb-investor-drilldown?${searchParams.toString()}`)
     if (!res.ok) {
-        console.warn(`[Background Load] ${ticker}: bulk fetch failed`, await res.text())
+        console.warn(`[Background Load] ${ticker}/${cusip}: bulk fetch failed`, await res.text())
         onProgress?.(1, 1)
         return
     }
     const data = await res.json()
 
-    const rows: InvestorDetail[] = (data.rows || []).map((row: any, index: number) => ({
-        id: `${ticker}-${row.quarter ?? 'unknown'}-${row.action ?? 'open'}-${row.cik ?? index}`,
-        ticker,
-        cik: row.cik != null ? String(row.cik) : '',
-        cikName: row.cikName ?? '',
-        cikTicker: row.cikTicker ?? '',
-        quarter: row.quarter ?? 'unknown',
-        cusip: row.cusip ?? null,
-        action: (row.action === 'close' ? 'close' : 'open'),
-        didOpen: row.didOpen ?? null,
-        didAdd: row.didAdd ?? null,
-        didReduce: row.didReduce ?? null,
-        didClose: row.didClose ?? null,
-        didHold: row.didHold ?? null,
-    }))
+    const rows: InvestorDetail[] = (data.rows || []).map((row: any) => {
+        const rowCusip = row.cusip ?? cusip
+        return {
+            id: `${rowCusip ?? 'nocusip'}-${row.quarter ?? 'unknown'}-${row.action ?? 'open'}-${row.cik ?? 'nocik'}`,
+            ticker,
+            cik: row.cik != null ? String(row.cik) : '',
+            cikName: row.cikName ?? '',
+            cikTicker: row.cikTicker ?? '',
+            quarter: row.quarter ?? 'unknown',
+            cusip: rowCusip ?? null,
+            action: (row.action === 'close' ? 'close' : 'open'),
+            didOpen: row.didOpen ?? null,
+            didAdd: row.didAdd ?? null,
+            didReduce: row.didReduce ?? null,
+            didClose: row.didClose ?? null,
+            didHold: row.didHold ?? null,
+        }
+    })
 
     const existingIds = new Set(getAllDrilldownRows().map(r => r.id))
     const dedupedRows = rows.filter(r => !existingIds.has(r.id))
@@ -233,12 +243,12 @@ export async function backgroundLoadAllDrilldownData(
 
     // Mark fetched combinations so table reads are instant
     for (const r of rows) {
-        fetchedCombinations.add(`${r.ticker}-${r.quarter}-${r.action}`)
+        fetchedCombinations.add(`${r.ticker}-${r.cusip}-${r.quarter}-${r.action}`)
     }
 
     onProgress?.(1, 1)
     const elapsedMs = Math.round(performance.now() - startMs)
-    console.log(`[Background Load] ${ticker}: fetched ${rows.length} rows in one bulk call (wall=${elapsedMs}ms)`)
+    console.log(`[Background Load] ${ticker}/${cusip}: fetched ${rows.length} rows in one bulk call (wall=${elapsedMs}ms)`)
 }
 
 /**
@@ -247,12 +257,13 @@ export async function backgroundLoadAllDrilldownData(
  */
 export function getDrilldownDataFromCollection(
     ticker: string,
+    cusip: string,
     quarter: string,
     action: 'open' | 'close'
 ): InvestorDetail[] | null {
-    if (!hasFetchedDrilldownData(ticker, quarter, action)) {
+    if (!hasFetchedDrilldownData(ticker, cusip, quarter, action)) {
         return null
     }
 
-    return getAllDrilldownRows().filter((item) => item.ticker === ticker && item.quarter === quarter && item.action === action)
+    return getAllDrilldownRows().filter((item) => item.ticker === ticker && item.cusip === cusip && item.quarter === quarter && item.action === action)
 }

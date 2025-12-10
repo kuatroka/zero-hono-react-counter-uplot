@@ -24,16 +24,18 @@ interface InvestorActivityDrilldownRow {
 
 interface InvestorActivityDrilldownTableProps {
   ticker: string;
+  cusip: string;
   quarter: string;
   action: InvestorActivityAction;
 }
 
 export function InvestorActivityDrilldownTable({
   ticker,
+  cusip,
   quarter,
   action,
 }: InvestorActivityDrilldownTableProps) {
-  const enabled = Boolean(ticker && quarter);
+  const enabled = Boolean(ticker && cusip && quarter);
 
   // State for data, loading, and timing
   const [data, setData] = useState<InvestorDetail[]>([]);
@@ -53,7 +55,7 @@ export function InvestorActivityDrilldownTable({
   useEffect(() => {
     if (!enabled) return;
 
-    const localRows = getDrilldownDataFromCollection(ticker, quarter, action);
+    const localRows = getDrilldownDataFromCollection(ticker, cusip, quarter, action);
     if (localRows) {
       setData(localRows);
       setQueryTimeMs(0);
@@ -65,7 +67,7 @@ export function InvestorActivityDrilldownTable({
     setIsLoading(true);
     setIsError(false);
 
-    fetchDrilldownData(ticker, quarter, action)
+    fetchDrilldownData(ticker, cusip, quarter, action)
       .then((result) => {
         if (cancelled) return;
         setData(result.rows);
@@ -86,13 +88,13 @@ export function InvestorActivityDrilldownTable({
     return () => {
       cancelled = true;
     };
-  }, [enabled, ticker, quarter, action]);
+  }, [enabled, ticker, cusip, quarter, action]);
 
   // Keep data in sync with live query (instant updates once present)
   useEffect(() => {
     if (slice?.data && slice.data.length > 0) {
       const filtered = slice.data.filter(
-        (r) => r.ticker === ticker && r.quarter === quarter && r.action === action
+        (r) => r.ticker === ticker && r.cusip === cusip && r.quarter === quarter && r.action === action
       );
       if (filtered.length > 0) {
         setData(filtered);
@@ -100,7 +102,7 @@ export function InvestorActivityDrilldownTable({
         if (queryTimeMs === null) setQueryTimeMs(0);
       }
     }
-  }, [slice, queryTimeMs]);
+  }, [slice, queryTimeMs, ticker, cusip, quarter, action]);
 
   // Transform data to display format
   const rows = useMemo(() => {

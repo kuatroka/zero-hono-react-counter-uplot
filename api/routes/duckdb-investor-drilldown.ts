@@ -4,16 +4,18 @@ import { getDuckDBConnection } from "../duckdb";
 const duckdbInvestorDrilldownRoutes = new Hono();
 
 /**
- * GET /api/duckdb-investor-drilldown?ticker=&quarter=&action=open|close&limit=
+ * GET /api/duckdb-investor-drilldown?ticker=&cusip=&quarter=&action=open|close&limit=
  * Extras:
  * - quarter=all returns all quarters
  * - action=both returns both open and close in one response
+ * - cusip is optional; if provided, filters to that specific CUSIP
  *
  * Returns superinvestor-level rows for a given ticker, quarter, and action
  * using DuckDB native via @duckdb/node-api.
  */
 duckdbInvestorDrilldownRoutes.get("/", async (c) => {
   const tickerRaw = (c.req.query("ticker") || "").trim();
+  const cusipRaw = (c.req.query("cusip") || "").trim();
   const quarterRaw = (c.req.query("quarter") || "").trim() || "all";
   const actionRaw = (c.req.query("action") || "").trim().toLowerCase() || "both";
   const limit = Math.min(parseInt(c.req.query("limit") || "500", 10), 5000);
@@ -27,6 +29,7 @@ duckdbInvestorDrilldownRoutes.get("/", async (c) => {
   }
 
   const ticker = tickerRaw.toUpperCase();
+  const cusip = cusipRaw || null;
   const quarter = quarterRaw === "all" ? null : quarterRaw;
 
   try {
@@ -34,6 +37,7 @@ duckdbInvestorDrilldownRoutes.get("/", async (c) => {
     const conn = await getDuckDBConnection();
 
     const escapedTicker = ticker.replace(/'/g, "''");
+    const escapedCusipClause = cusip ? `AND d.cusip = '${cusip.replace(/'/g, "''")}'` : "";
     const escapedQuarterClause = quarter ? `AND d.quarter = '${quarter.replace(/'/g, "''")}'` : "";
 
     const buildSelect = (actionCol: "did_open" | "did_close", actionLabel: "open" | "close") => `
@@ -52,6 +56,7 @@ duckdbInvestorDrilldownRoutes.get("/", async (c) => {
       FROM cusip_quarter_investor_activity_detail d
       LEFT JOIN superinvestors s ON s.cik = d.cik
       WHERE d.ticker = '${escapedTicker}'
+        ${escapedCusipClause}
         ${escapedQuarterClause}
         AND d.${actionCol} = true
       LIMIT ${limit}

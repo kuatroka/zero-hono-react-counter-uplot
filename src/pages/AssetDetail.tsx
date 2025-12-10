@@ -65,12 +65,10 @@ export function AssetDetailPage() {
 
   // Query investor flow from DuckDB
   const { data: flowData, isLoading: isFlowLoading } = useQuery({
-    queryKey: ['investor-flow', hasCusip ? cusip : code],
+    queryKey: ['investor-flow', code],
     queryFn: async () => {
       const t0 = performance.now();
-      const url = hasCusip
-        ? `/api/investor-flow?cusip=${cusip}`
-        : `/api/investor-flow?ticker=${code}`;
+      const url = `/api/investor-flow?ticker=${code}`;
       try {
         const res = await fetch(url);
         if (!res.ok) {
@@ -80,7 +78,7 @@ export function AssetDetailPage() {
         }
         const data = await res.json();
         const rows = (data.rows || []) as InvestorFlow[];
-        console.debug(`[InvestorFlow] fetched ${rows.length} rows for ${hasCusip ? cusip : code} in ${Math.round(performance.now() - t0)}ms`, rows.slice(0, 3));
+        console.debug(`[InvestorFlow] fetched ${rows.length} rows for ${code} in ${Math.round(performance.now() - t0)}ms`, rows.slice(0, 3));
         return rows;
       } catch (err) {
         console.warn(`[InvestorFlow] failed for ${url}:`, err);
@@ -174,10 +172,10 @@ export function AssetDetailPage() {
     }
     
     // Eagerly load BOTH actions for the latest quarter to make clicks instant
-    if (latestQuarter && code) {
+    if (latestQuarter && code && record?.cusip) {
       const eagerStart = performance.now();
       console.log(`[Eager Load] Fetching both open and close for ${latestQuarter} in single call`);
-      fetchDrilldownBothActions(code, latestQuarter)
+      fetchDrilldownBothActions(code, record.cusip, latestQuarter)
         .then(({ rows, queryTimeMs }) => {
           const eagerWallMs = Math.round(performance.now() - eagerStart);
           console.log(`[Eager Load] Both actions loaded for ${latestQuarter}: wall=${eagerWallMs}ms, net=${queryTimeMs}ms, rows=${rows.length}`);
@@ -186,28 +184,29 @@ export function AssetDetailPage() {
           console.error('[Eager Load] Failed:', err);
         });
     }
-  }, [selection, activityRows, code]);
+  }, [selection, activityRows, code, record?.cusip]);
 
   // Start background loading AFTER initial selection is set
   // Wait a bit to let the table fetch its data first, then load remaining quarters
   useEffect(() => {
-    if (!selection || !code || backgroundLoadStartedRef.current || activityRows.length === 0) return;
+    if (!selection || !code || !record?.cusip || backgroundLoadStartedRef.current || activityRows.length === 0) return;
     
     backgroundLoadStartedRef.current = true;
     
     // Delay background loading to let the table fetch its data first
     const timeoutId = setTimeout(() => {
       const bgStart = performance.now();
-      console.log(`[Background Load] Starting bulk fetch for ${code}`);
+      console.log(`[Background Load] Starting bulk fetch for ${code}/${record.cusip}`);
 
       backgroundLoadAllDrilldownData(
         code,
+        record.cusip,
         [], // empty list triggers full bulk load (route capped to 5000 rows)
         (loaded, total) => {
           setBackgroundLoadProgress({ loaded, total });
           if (loaded === total) {
             const bgMs = Math.round(performance.now() - bgStart);
-            console.log(`[Background Load] Complete for ${code}: bulk fetch done in ${bgMs}ms`);
+            console.log(`[Background Load] Complete for ${code}/${record.cusip}: bulk fetch done in ${bgMs}ms`);
           }
         }
       ).catch(err => {
@@ -216,7 +215,7 @@ export function AssetDetailPage() {
     }, 500); // 500ms delay to let table fetch first
     
     return () => clearTimeout(timeoutId);
-  }, [selection, code, activityRows]);
+  }, [selection, code, record?.cusip, activityRows]);
 
   if (!code) return <div className="p-6">Missing asset code.</div>;
 
@@ -300,13 +299,18 @@ export function AssetDetailPage() {
                 </div>
               )}
               
-              {selection ? (
+              {selection && record.cusip ? (
                 <InvestorActivityDrilldownTable
-                  key={`${record.asset}-${selection.quarter}-${selection.action}`}
+                  key={`${record.asset}-${record.cusip}-${selection.quarter}-${selection.action}`}
                   ticker={record.asset}
+                  cusip={record.cusip}
                   quarter={selection.quarter}
                   action={selection.action}
                 />
+              ) : selection ? (
+                <div className="py-8 text-center text-muted-foreground">
+                  No CUSIP available for this asset.
+                </div>
               ) : (
                 <div className="py-8 text-center text-muted-foreground">
                   Select a bar in the chart to see which superinvestors opened or closed positions.
