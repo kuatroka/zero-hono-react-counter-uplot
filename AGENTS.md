@@ -17,33 +17,28 @@ Keep this managed block so 'openspec update' can refresh the instructions.
 
 <!-- OPENSPEC:END -->
 
-## Schema Management
+## DB and Schema Management
 
-This project uses **drizzle-zero** to auto-generate Zero schema from Drizzle ORM schema.
+This project uses two main DBs:
+1. **Postgres** - for user management, authorisations, subscriptions, favourite management, but the main data is stored in the **duckdb** DB in a local under variable **DUCKDB_PATH** in .env
 
-### Schema Files
-- `src/db/schema.ts` - **Source of truth** (Drizzle ORM tables and relations)
-- `src/zero/schema.gen.ts` - Auto-generated Zero schema (DO NOT EDIT)
-- `src/zero/schema.ts` - Wrapper that adds permissions and re-exports
+There is a lot of other important data in parquet file format in the directory **APP_DATA_PATH** in .env
+2. **Zero DB** - for real-time synchronization and client-side caching
 
-### Workflow
+This project uses **drizzle-orm** for schema generation only for the **Postgres**.
 
-**CRITICAL ORDER**: Postgres migration MUST complete BEFORE Zero schema generation.
-Generating Zero schema first will cause the running app to crash with `SchemaVersionNotSupported`.
+## JS runtime and package management - **bun**
 
-1. Modify `src/db/schema.ts` (add tables, columns, relations)
-2. Run `bun run db:sync` (generates migration, applies it, then generates Zero schema)
-3. Update permissions in `src/zero/schema.ts` if needed
+## Backend Server - **hono** 
 
 ### Key Commands
 ```bash
-bun run db:sync               # RECOMMENDED: Full sync (generate + migrate + zero-schema)
+
+bun run dev:db-up             # to start the dev Postgres container
+bun run dev:db-down           # to stop the dev Postgres container
+bun run dev:clean             # to delete data volumes Posgtres (use after stopping db)
 bun run db:generate           # Generate Drizzle migration only
 bun run db:migrate            # Apply migrations to database only
-bun run generate-zero-schema  # Regenerate Zero schema from Drizzle (run AFTER migrate)
-```
+bun run dev                   # launches the web app
 
-### Why Order Matters
-- Zero client schema is hot-reloaded by Vite immediately after `generate-zero-schema`
-- If the table doesn't exist in Postgres yet, Zero server rejects the schema mismatch
-- This breaks ALL data syncing, not just the new table
+```

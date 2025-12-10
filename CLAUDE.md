@@ -1,3 +1,6 @@
+alwayse open '@AGENTS.md'
+
+
 <!-- OPENSPEC:START -->
 # OpenSpec Instructions
 

@@ -1,11 +1,10 @@
 # Project Context
 
 ## Purpose
-A real-time analytics application demonstrating Zero (Rocicorp's sync framework) capabilities. The app showcases:
-- **Entities Management:** Global search across 1000 investors and assets with instant Zero-sync queries
-- **Counter & Charts:** Interactive counter with 10 different uPlot chart visualizations
-- **Real-time Sync:** Data synchronization between multiple clients using PostgreSQL and Zero Cache
-- **Messages Demo:** Original Zero example with CRUD operations, filtering, relationships, and JWT-based authentication
+A financial analytics app for managing and visualizing investor and asset data and insights.
+- **Entities Management:** Global search across around 12000 investors and 30000 assets using TanStack DB live queries
+- **Charts:** Interactive uPlot and eCharts chart visualizations
+authentication
 
 ## Tech Stack
 
@@ -13,9 +12,8 @@ A real-time analytics application demonstrating Zero (Rocicorp's sync framework)
 - React 19.2.0
 - TypeScript 5.5.3
 - Vite 5.4.1 (dev server on port 3003)
-- React Router 7.9.4 (client-side routing)
-- @rocicorp/zero 0.24 (real-time sync)
-- uPlot 1.6.32 (charting library)
+- @tanstack/react-router 1.139.14 (client-side routing)
+- uPlot, echarts, echarts-for-react (charting libraries with canvas option)
 - shadcn/ui + Tailwind 4.1.14 (styling)
 - Radix UI (headless component primitives)
 - Lucide React (icon library)
@@ -23,21 +21,17 @@ A real-time analytics application demonstrating Zero (Rocicorp's sync framework)
 
 ### Backend
 - Hono 4.6.6 (edge runtime framework)
-- Bun (JavaScript runtime, replaces Node.js)
+- Bun (JavaScript runtime)
 - API server on port 4000
 - jose (JWT signing and verification)
 
 ### Database & Sync
 - PostgreSQL with Write-Ahead Logging (WAL)
-- Zero Cache server (port 4848)
-- Litestream for backup/replication
+- DuckDB for main analytics and charts / tables filling queries
 
 ### Deployment & Infrastructure
-- SST 3.9.33 (Serverless Stack for AWS)
-- Vercel (alternative deployment target)
-- AWS ECS with Fargate
-- S3 for replication backups
-- Podman/Docker for local development
+- Docker for local development
+- VPS for production
 
 ### Development Tools
 - ESLint 9.9.0 with flat config
