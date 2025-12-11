@@ -44,4 +44,48 @@ superinvestorsRoutes.get("/", async (c) => {
     }
 });
 
+/**
+ * GET /api/superinvestors/:cik
+ *
+ * Returns a single superinvestor by CIK.
+ */
+superinvestorsRoutes.get("/:cik", async (c) => {
+    const cik = c.req.param("cik");
+
+    try {
+        const conn = await getDuckDBConnection();
+
+        const sql = `
+      SELECT 
+        cik,
+        cik_name as "cikName"
+      FROM superinvestors
+      WHERE cik = ?
+      LIMIT 1
+    `;
+
+        const stmt = await conn.prepare(sql);
+        stmt.bindVarchar(1, cik);
+        const reader = await stmt.runAndReadAll();
+        const rows = reader.getRows();
+
+        if (rows.length === 0) {
+            return c.json({ error: "Superinvestor not found" }, 404);
+        }
+
+        const row = rows[0];
+        const result = {
+            id: String(row[0]),
+            cik: String(row[0]),
+            cikName: row[1] as string,
+        };
+
+        return c.json(result);
+    } catch (error) {
+        console.error("[DuckDB Superinvestor] Error:", error);
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        return c.json({ error: "Superinvestor query failed", details: errorMessage }, 500);
+    }
+});
+
 export default superinvestorsRoutes;

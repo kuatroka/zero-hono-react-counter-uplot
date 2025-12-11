@@ -1,0 +1,294 @@
+import { createCollection } from '@tanstack/db'
+import { queryCollectionOptions } from '@tanstack/query-db-collection'
+import { QueryClient } from '@tanstack/query-core'
+
+// Create a dedicated QueryClient for searches to avoid circular dependency
+const searchQueryClient = new QueryClient({
+    defaultOptions: {
+        queries: {
+            staleTime: Infinity, // Never auto-refetch
+            gcTime: Infinity,    // Never garbage collect
+        },
+    },
+})
+
+export interface SearchResult {
+    id: number
+    cusip: string | null
+    code: string
+    name: string | null
+    category: string
+}
+
+// SearchResult with score for ranked results
+export interface ScoredSearchResult extends SearchResult {
+    score: number
+}
+
+// Sync state tracking
+export interface SyncState {
+    status: 'idle' | 'syncing' | 'complete'
+    lastSyncTime?: number
+    totalRows?: number
+}
+
+let syncState: SyncState = { status: 'idle' }
+
+export function getSyncState(): SyncState {
+    return syncState
+}
+
+export function setSyncState(state: SyncState) {
+    syncState = state
+}
+
+// Fetch all search data using cursor-based pagination
+async function fetchAllSearches(): Promise<SearchResult[]> {
+    setSyncState({ status: 'syncing' })
+    
+    const allItems: SearchResult[] = []
+    let cursor: string | null = null
+    let pageCount = 0
+
+    try {
+        while (true) {
+            const urlStr: string = cursor
+                ? `/api/duckdb-search/full-dump?cursor=${cursor}&pageSize=1000`
+                : '/api/duckdb-search/full-dump?pageSize=1000'
+
+            const response: Response = await fetch(urlStr)
+            if (!response.ok) throw new Error('Failed to fetch search page')
+
+            const pageData: { items: SearchResult[]; nextCursor: string | null } = await response.json()
+            
+            if (pageData.items.length > 0) {
+                allItems.push(...pageData.items)
+                pageCount++
+            }
+
+            cursor = pageData.nextCursor
+            if (!cursor) break
+        }
+
+        setSyncState({ status: 'complete', lastSyncTime: Date.now(), totalRows: allItems.length })
+        console.log(`[SearchSync] Fetched ${pageCount} pages (${allItems.length} rows)`)
+        return allItems
+    } catch (error) {
+        console.error('[SearchSync] Error:', error)
+        setSyncState({ status: 'idle' })
+        throw error
+    }
+}
+
+// Create the searches collection with TanStack Query backing
+// queryFn fetches all data which is then cached by TanStack Query
+export const searchesCollection = createCollection(
+    queryCollectionOptions<SearchResult>({
+        queryKey: ['searches'],
+        queryFn: fetchAllSearches,
+        queryClient: searchQueryClient,
+        getKey: (item) => item.id,
+        staleTime: Infinity, // Never auto-refetch
+    })
+)
+
+// Preload the searches collection - call this on app init
+export async function preloadSearches(): Promise<void> {
+    const state = getSyncState()
+    if (state.status === 'complete') {
+        console.log('[SearchSync] Already loaded, skipping preload')
+        return
+    }
+    
+    // Trigger the queryFn by accessing the collection
+    await searchesCollection.preload()
+}
+
+// ============================================================
+// HIGH-PERFORMANCE PREFIX INDEX FOR SUB-MILLISECOND SEARCH
+// ============================================================
+
+// Pre-computed index structure for O(1) prefix lookups
+interface SearchIndex {
+    // Maps lowercase prefix -> array of item IDs (from JSON)
+    codeExact: Record<string, number[]>
+    codePrefixes: Record<string, number[]>
+    namePrefixes: Record<string, number[]>
+    // Maps ID -> item for fast retrieval
+    items: Record<string, SearchResult>
+    metadata?: {
+        totalItems: number
+        generatedAt?: string
+        error?: string
+    }
+}
+
+let searchIndex: SearchIndex | null = null
+let indexLoadPromise: Promise<void> | null = null
+
+// Load pre-computed index from API (generated during data pipeline)
+export async function loadPrecomputedIndex(): Promise<void> {
+    // Prevent multiple simultaneous loads
+    if (indexLoadPromise) {
+        return indexLoadPromise
+    }
+    
+    if (searchIndex && Object.keys(searchIndex.items).length > 0) {
+        console.log('[SearchIndex] Already loaded, skipping')
+        return
+    }
+    
+    indexLoadPromise = (async () => {
+        const startTime = performance.now()
+        
+        try {
+            const fetchStart = performance.now()
+            const response = await fetch('/api/duckdb-search/index')
+            const fetchEnd = performance.now()
+
+            if (!response.ok) {
+                throw new Error(`Failed to load index: ${response.status}`)
+            }
+
+            const textStart = performance.now()
+            const text = await response.text()
+            const textEnd = performance.now()
+
+            const parseStart = performance.now()
+            const data: SearchIndex = JSON.parse(text)
+            const parseEnd = performance.now()
+            
+            if (data.metadata?.error) {
+                console.warn('[SearchIndex] Index not available:', data.metadata.error)
+                searchIndex = null
+                return
+            }
+            
+            searchIndex = data
+            
+            const total = parseEnd - startTime
+            const network = fetchEnd - fetchStart
+            const download = textEnd - textStart
+            const parse = parseEnd - parseStart
+
+            console.log(
+                `[SearchIndex] Loaded pre-computed index: total=${total.toFixed(1)}ms ` +
+                `(network=${network.toFixed(1)}ms, download=${download.toFixed(1)}ms, parse=${parse.toFixed(1)}ms, ` +
+                `items=${data.metadata?.totalItems || 0})`
+            )
+        } catch (error) {
+            console.error('[SearchIndex] Failed to load:', error)
+            searchIndex = null
+        } finally {
+            indexLoadPromise = null
+        }
+    })()
+    
+    return indexLoadPromise
+}
+
+// Build the search index from items (fallback if pre-computed index not available)
+export function buildSearchIndex(items: SearchResult[]): void {
+    if (searchIndex && Object.keys(searchIndex.items).length > 0) {
+        console.log('[SearchIndex] Pre-computed index already loaded, skipping runtime build')
+        return
+    }
+    
+    const startTime = performance.now()
+    
+    const codeExact: Record<string, number[]> = {}
+    const codePrefixes: Record<string, number[]> = {}
+    const namePrefixes: Record<string, number[]> = {}
+    const itemsMap: Record<string, SearchResult> = {}
+    
+    for (const item of items) {
+        if (!item || !item.code) continue
+        
+        itemsMap[item.id] = item
+        const lowerCode = item.code.toLowerCase()
+        const lowerName = (item.name || '').toLowerCase()
+        
+        // Index exact code
+        if (!codeExact[lowerCode]) codeExact[lowerCode] = []
+        codeExact[lowerCode].push(item.id)
+        
+        // Index code prefixes (up to 10 chars)
+        for (let i = 1; i <= Math.min(lowerCode.length, 10); i++) {
+            const prefix = lowerCode.slice(0, i)
+            if (!codePrefixes[prefix]) codePrefixes[prefix] = []
+            codePrefixes[prefix].push(item.id)
+        }
+        
+        // Index name prefixes (up to 10 chars)
+        if (lowerName) {
+            for (let i = 1; i <= Math.min(lowerName.length, 10); i++) {
+                const prefix = lowerName.slice(0, i)
+                if (!namePrefixes[prefix]) namePrefixes[prefix] = []
+                namePrefixes[prefix].push(item.id)
+            }
+        }
+    }
+    
+    searchIndex = { 
+        codeExact, 
+        codePrefixes, 
+        namePrefixes, 
+        items: itemsMap,
+        metadata: { totalItems: items.length }
+    }
+    
+    const elapsed = performance.now() - startTime
+    console.log(`[SearchIndex] Built index at runtime for ${items.length} items in ${elapsed.toFixed(1)}ms`)
+}
+
+// Fast search using pre-computed index - O(1) lookup instead of O(n) filter
+export function searchWithIndex(query: string, limit: number = 20): ScoredSearchResult[] {
+    if (!searchIndex || query.length < 2) return []
+    
+    const lowerQuery = query.toLowerCase()
+    const results: Array<{ item: SearchResult; score: number }> = []
+    const seenIds = new Set<number>()
+    
+    // 1. Exact code match (score: 100)
+    const exactMatches = searchIndex.codeExact[lowerQuery]
+    if (exactMatches) {
+        for (const id of exactMatches) {
+            if (seenIds.has(id)) continue
+            seenIds.add(id)
+            const item = searchIndex.items[id]
+            if (item) results.push({ item, score: 100 })
+        }
+    }
+    
+    // 2. Code prefix match (score: 80)
+    const codePrefixMatches = searchIndex.codePrefixes[lowerQuery]
+    if (codePrefixMatches) {
+        for (const id of codePrefixMatches) {
+            if (seenIds.has(id)) continue
+            seenIds.add(id)
+            const item = searchIndex.items[id]
+            if (item) results.push({ item, score: 80 })
+        }
+    }
+    
+    // 3. Name prefix match (score: 40)
+    const namePrefixMatches = searchIndex.namePrefixes[lowerQuery]
+    if (namePrefixMatches) {
+        for (const id of namePrefixMatches) {
+            if (seenIds.has(id)) continue
+            seenIds.add(id)
+            const item = searchIndex.items[id]
+            if (item) results.push({ item, score: 40 })
+        }
+    }
+    
+    // Sort by score and limit
+    results.sort((a, b) => b.score - a.score || (a.item.name || '').localeCompare(b.item.name || ''))
+    
+    return results.slice(0, limit).map(r => ({ ...r.item, score: r.score } as ScoredSearchResult))
+}
+
+// Check if index is ready
+export function isSearchIndexReady(): boolean {
+    return searchIndex !== null && Object.keys(searchIndex.items).length > 0
+}

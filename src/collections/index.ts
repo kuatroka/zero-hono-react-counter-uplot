@@ -1,14 +1,17 @@
 // TanStack DB Collections - Export all collection factories and instances
 
 // Factory functions (for creating new collection instances)
-export { createAssetsCollection, type Asset } from './assets'
-export { createSuperinvestorsCollection, type Superinvestor } from './superinvestors'
-export { type InvestorDetail, investorDrilldownCollection } from './investor-details'
+export { createAssetsCollection } from './assets'
 
 // Singleton instances (for use with useLiveQuery in components)
 export {
     queryClient,
     assetsCollection,
     superinvestorsCollection,
+    searchesCollection,
     preloadCollections,
 } from './instances'
+
+// Types
+export type { Asset, Superinvestor, SearchResult } from './instances'
+export { type InvestorDetail, investorDrilldownCollection } from './investor-details'

@@ -11,6 +11,7 @@
 import { QueryClient } from '@tanstack/query-core';
 import { createAssetsCollection, type Asset } from './assets';
 import { createSuperinvestorsCollection, type Superinvestor } from './superinvestors';
+import { searchesCollection, type SearchResult } from './searches';
 import { type InvestorDetail } from './investor-details';
 
 // Shared QueryClient instance for all collections
@@ -27,10 +28,12 @@ export const queryClient = new QueryClient({
 // Singleton collection instances for eager-synced data
 export const assetsCollection = createAssetsCollection(queryClient);
 export const superinvestorsCollection = createSuperinvestorsCollection(queryClient);
+// searchesCollection is created in searches.ts with dexieCollectionOptions (no QueryClient needed)
+export { searchesCollection };
 // investorDrilldownCollection is created in investor-details.ts and uses this same queryClient
 
 // Re-export types for convenience
-export type { Asset, Superinvestor, InvestorDetail };
+export type { Asset, Superinvestor, SearchResult, InvestorDetail };
 
 // Preload all eager collections
 // Call this on app init to ensure data is ready for instant queries

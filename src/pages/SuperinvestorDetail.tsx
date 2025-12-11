@@ -8,28 +8,30 @@ export function SuperinvestorDetailPage() {
   const { cik } = useParams({ strict: false }) as { cik?: string };
   const { onReady } = useContentReady();
 
-  // Fetch superinvestors list and find the matching one
-  const { data: superinvestorsData, isLoading } = useQuery({
-    queryKey: ['superinvestors'],
+  // Fetch single superinvestor by CIK
+  const { data: record, isLoading } = useQuery({
+    queryKey: ['superinvestor', cik],
     queryFn: async () => {
-      const res = await fetch('/api/superinvestors');
-      if (!res.ok) throw new Error('Failed to fetch superinvestors');
-      return res.json() as Promise<Superinvestor[]>;
+      const res = await fetch(`/api/superinvestors/${cik}`);
+      if (!res.ok) {
+        if (res.status === 404) return null;
+        throw new Error('Failed to fetch superinvestor');
+      }
+      return res.json() as Promise<Superinvestor>;
     },
     staleTime: 5 * 60 * 1000,
+    enabled: !!cik,
   });
-
-  const record = superinvestorsData?.find(s => s.cik === cik);
 
   // Signal ready when data is available (from cache or server)
   const readyCalledRef = useRef(false);
   useEffect(() => {
     if (readyCalledRef.current) return;
-    if (record || (!isLoading && superinvestorsData !== undefined)) {
+    if (record !== undefined || !isLoading) {
       readyCalledRef.current = true;
       onReady();
     }
-  }, [record, isLoading, superinvestorsData, onReady]);
+  }, [record, isLoading, onReady]);
 
   if (!cik) return <div className="p-6">Missing CIK.</div>;
 

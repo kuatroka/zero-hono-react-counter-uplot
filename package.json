@@ -13,6 +13,7 @@
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
     "db:sync": "bun run db:generate && bun run db:migrate",
+    "benchmark:search-index": "bun scripts/benchmark-search-index.ts",
     "build": "bun run tsc -b && bunx vite build",
     "lint": "bunx eslint ."
   },
@@ -24,6 +25,7 @@
     "@radix-ui/react-select": "^2.2.6",
     "@radix-ui/react-slot": "^1.2.4",
     "@tanstack/db": "^0.5.11",
+    "@tanstack/offline-transactions": "^1.0.1",
     "@tanstack/query-db-collection": "^1.0.6",
     "@tanstack/react-db": "^0.1.55",
     "@tanstack/react-query": "^5.90.12",
@@ -41,7 +43,6 @@
     "postgres": "^3.4.7",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
-    "react-router-dom": "^7.9.4",
     "recharts": "2.15.4",
     "sst": "3.9.33",
     "tailwind-merge": "^3.4.0",

@@ -1,7 +1,9 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useMemo } from "react";
 import { useNavigate } from "@tanstack/react-router";
-import { useQuery } from "@tanstack/react-query";
+import { useLiveQuery } from "@tanstack/react-db";
 import { Input } from "@/components/ui/input";
+import { searchesCollection, preloadSearches, getSyncState, buildSearchIndex, searchWithIndex, isSearchIndexReady, loadPrecomputedIndex } from "@/collections/searches";
+import type { SearchResult as CollectionSearchResult } from "@/collections/searches";
 
 // 50ms debounce for near-instant feel while reducing request volume
 function useDebounce<T>(value: T, delay: number): T {
@@ -15,12 +17,7 @@ function useDebounce<T>(value: T, delay: number): T {
   return debouncedValue;
 }
 
-interface SearchResult {
-  id: number;
-  cusip: string | null;
-  code: string;
-  name: string | null;
-  category: string;
+interface SearchResult extends CollectionSearchResult {
   score: number;
 }
 
@@ -28,6 +25,41 @@ interface SearchResponse {
   results: SearchResult[];
   count: number;
   queryTimeMs: number;
+}
+
+// Local filtering and ranking logic matching DuckDB scoring
+function scoreSearchResult(item: CollectionSearchResult, query: string): number {
+  if (!item || !item.code) return 0;
+  const lowerQuery = query.toLowerCase();
+  const lowerCode = item.code.toLowerCase();
+  const lowerName = (item.name || "").toLowerCase();
+
+  if (lowerCode === lowerQuery) return 100;
+  if (lowerCode.startsWith(lowerQuery)) return 80;
+  if (lowerCode.includes(lowerQuery)) return 60;
+  if (lowerName.startsWith(lowerQuery)) return 40;
+  if (lowerName.includes(lowerQuery)) return 20;
+  return 0;
+}
+
+function filterAndRankResults(
+  allResults: CollectionSearchResult[],
+  query: string,
+  limit: number = 20
+): SearchResult[] {
+  if (!allResults || !Array.isArray(allResults)) return [];
+  
+  const scored = allResults
+    .filter((item) => item && item.code) // Filter out invalid items
+    .map((item) => ({
+      ...item,
+      score: scoreSearchResult(item, query),
+    }))
+    .filter((item) => item.score > 0)
+    .sort((a, b) => b.score - a.score || (a.name || "").localeCompare(b.name || ""))
+    .slice(0, limit);
+
+  return scored;
 }
 
 async function fetchDuckDBSearch(query: string): Promise<SearchResponse> {
@@ -43,22 +75,111 @@ export function DuckDBGlobalSearch() {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const listRef = useRef<HTMLDivElement | null>(null);
   const [highlightedIndex, setHighlightedIndex] = useState(-1);
+  const [queryTimeMs, setQueryTimeMs] = useState<number | undefined>();
+  const [isUsingApi, setIsUsingApi] = useState(false);
+  const [apiResults, setApiResults] = useState<SearchResult[]>([]);
+  const [isInitialized, setIsInitialized] = useState(false);
 
   // 50ms debounce
   const debouncedQuery = useDebounce(query.trim(), 50);
   const shouldSearch = debouncedQuery.length >= 2;
 
-  // TanStack Query for DuckDB search
-  const { data, isFetching } = useQuery({
-    queryKey: ["duckdb-search", debouncedQuery],
-    queryFn: () => fetchDuckDBSearch(debouncedQuery),
-    staleTime: 5 * 60 * 1000, // 5 minutes cache
-    enabled: shouldSearch,
-    // Keep previous results visible while the next keystroke is loading to avoid dropdown flash
-    placeholderData: (prev) => prev,
-  });
+  // Use TanStack DB live query for reactive local search
+  // Pattern matches AssetsTable.tsx - no .select() needed
+  const { data: searchData } = useLiveQuery(
+    (q) => q.from({ searches: searchesCollection })
+  );
 
-  const results = data?.results ?? [];
+  // Get all items from the collection
+  const allItems = useMemo(() => {
+    return (searchData ?? []) as CollectionSearchResult[];
+  }, [searchData]);
+
+  // Build search index when data is available (one-time operation)
+  const indexBuiltRef = useRef(false);
+  useEffect(() => {
+    if (allItems.length > 0 && !indexBuiltRef.current) {
+      indexBuiltRef.current = true;
+      buildSearchIndex(allItems);
+    }
+  }, [allItems]);
+
+  // Filter and rank results using indexed search (sub-ms) or fallback to O(n) filter
+  const localResults = useMemo(() => {
+    if (!shouldSearch) return [];
+    const startTime = performance.now();
+    
+    // Use indexed search if available (sub-ms), otherwise fallback to O(n) filter
+    const filtered = isSearchIndexReady()
+      ? searchWithIndex(debouncedQuery, 20)
+      : filterAndRankResults(allItems, debouncedQuery, 20);
+    
+    setQueryTimeMs(Math.round((performance.now() - startTime) * 1000) / 1000);
+    return filtered;
+  }, [allItems, debouncedQuery, shouldSearch]);
+
+  // On mount, try to load pre-computed index first, then fallback to full-dump sync
+  useEffect(() => {
+    const initSearch = async () => {
+      // 1. Try to load pre-computed index from API (fastest - single JSON file)
+      console.log('[Search] Attempting to load pre-computed index...');
+      await loadPrecomputedIndex();
+      
+      // 2. If pre-computed index loaded, we're done
+      if (isSearchIndexReady()) {
+        console.log('[Search] Pre-computed index loaded successfully');
+        setIsInitialized(true);
+        return;
+      }
+      
+      // 3. Fallback: load via TanStack DB full-dump sync
+      console.log('[Search] Pre-computed index not available, falling back to full-dump sync...');
+      const syncState = getSyncState();
+      if (syncState.status !== 'complete') {
+        await preloadSearches();
+      }
+      setIsInitialized(true);
+    };
+    
+    initSearch();
+  }, []);
+
+  // Fallback to API if collection is empty and user is searching
+  useEffect(() => {
+    if (!shouldSearch) {
+      setApiResults([]);
+      setIsUsingApi(false);
+      return;
+    }
+
+    // If we have local data, use it
+    if (allItems.length > 0) {
+      setIsUsingApi(false);
+      return;
+    }
+
+    // Only fallback to API if initialized and still no data
+    if (!isInitialized) return;
+
+    // Fallback to API while sync is in progress
+    setIsUsingApi(true);
+    const fetchFromApi = async () => {
+      try {
+        const result = await fetchDuckDBSearch(debouncedQuery);
+        setApiResults(result.results);
+        setQueryTimeMs(result.queryTimeMs);
+      } catch (error) {
+        console.error('[Search] API Error:', error);
+        setApiResults([]);
+      }
+    };
+
+    fetchFromApi();
+  }, [debouncedQuery, shouldSearch, allItems.length, isInitialized]);
+
+  // Use local results if available, otherwise API results
+  const results = allItems.length > 0 ? localResults : apiResults;
+  const isFetching = isUsingApi && apiResults.length === 0 && shouldSearch;
 
   // Close dropdown on outside click
   useEffect(() => {
@@ -142,9 +263,9 @@ export function DuckDBGlobalSearch() {
           className="w-full sm:w-[30rem] pr-16"
         />
         {/* Query time badge */}
-        {data?.queryTimeMs !== undefined && shouldSearch && (
+        {queryTimeMs !== undefined && shouldSearch && (
           <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] text-muted-foreground bg-muted px-1.5 py-0.5 rounded">
-            {data.queryTimeMs.toFixed(1)}ms
+            {queryTimeMs.toFixed(1)}ms
           </span>
         )}
         {isFetching && (
