@@ -14,11 +14,15 @@
     "db:migrate": "drizzle-kit migrate",
     "db:sync": "bun run db:generate && bun run db:migrate",
     "benchmark:search-index": "bun scripts/benchmark-search-index.ts",
+    "benchmark:api": "bun scripts/benchmark-api-endpoints.ts",
+    "benchmark:charts": "bun scripts/run-chart-benchmark.ts",
+    "benchmark:duckdb": "bun scripts/benchmark-duckdb-native.ts",
+    "benchmark:all": "bash scripts/run-all-benchmarks.sh",
     "build": "bun run tsc -b && bunx vite build",
     "lint": "bunx eslint ."
   },
   "dependencies": {
-    "@duckdb/node-api": "^1.4.2-r.1",
+    "@duckdb/node-api": "^1.4.3-r.1",
     "@nivo/bar": "^0.99.0",
     "@nivo/core": "^0.99.0",
     "@radix-ui/react-dialog": "^1.1.15",

@@ -1,0 +1,435 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Chart Rendering Benchmark</title>
+  <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/uplot@1.6.30/dist/uPlot.iife.min.js"></script>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/uplot@1.6.30/dist/uPlot.min.css">
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      max-width: 1400px;
+      margin: 0 auto;
+      padding: 20px;
+      background: #f5f5f5;
+    }
+    h1 {
+      color: #333;
+    }
+    .controls {
+      background: white;
+      padding: 20px;
+      border-radius: 8px;
+      margin-bottom: 20px;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+    .controls button {
+      background: #4CAF50;
+      color: white;
+      border: none;
+      padding: 10px 20px;
+      margin: 5px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 14px;
+    }
+    .controls button:hover {
+      background: #45a049;
+    }
+    .controls button:disabled {
+      background: #ccc;
+      cursor: not-allowed;
+    }
+    .results {
+      background: white;
+      padding: 20px;
+      border-radius: 8px;
+      margin-bottom: 20px;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+    .results pre {
+      background: #f8f8f8;
+      padding: 15px;
+      border-radius: 4px;
+      overflow-x: auto;
+      font-size: 12px;
+      line-height: 1.5;
+    }
+    .chart-container {
+      background: white;
+      padding: 20px;
+      border-radius: 8px;
+      margin-bottom: 20px;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+    .chart {
+      width: 100%;
+      height: 400px;
+    }
+    .status {
+      padding: 10px;
+      margin: 10px 0;
+      border-radius: 4px;
+      font-weight: 500;
+    }
+    .status.running {
+      background: #fff3cd;
+      color: #856404;
+    }
+    .status.complete {
+      background: #d4edda;
+      color: #155724;
+    }
+    .metric {
+      display: inline-block;
+      margin: 5px 10px;
+      padding: 5px 10px;
+      background: #e3f2fd;
+      border-radius: 4px;
+      font-family: monospace;
+    }
+  </style>
+</head>
+<body>
+  <h1>📊 Chart Rendering Benchmark</h1>
+  
+  <div class="controls">
+    <h3>Test Configuration</h3>
+    <label>
+      Data Points:
+      <select id="dataPoints">
+        <option value="100">100 points</option>
+        <option value="500">500 points</option>
+        <option value="1000" selected>1,000 points</option>
+        <option value="2000">2,000 points</option>
+        <option value="5000">5,000 points</option>
+        <option value="10000">10,000 points</option>
+      </select>
+    </label>
+    <label>
+      Iterations:
+      <select id="iterations">
+        <option value="5">5 iterations</option>
+        <option value="10" selected>10 iterations</option>
+        <option value="20">20 iterations</option>
+        <option value="50">50 iterations</option>
+      </select>
+    </label>
+    <br><br>
+    <button id="runBenchmark">Run Benchmark</button>
+    <button id="clearResults">Clear Results</button>
+  </div>
+
+  <div id="status"></div>
+  <div id="results" class="results" style="display: none;"></div>
+
+  <div class="chart-container">
+    <h3>ECharts Preview</h3>
+    <div id="echarts" class="chart"></div>
+  </div>
+
+  <div class="chart-container">
+    <h3>uPlot Preview</h3>
+    <div id="uplot" class="chart"></div>
+  </div>
+
+  <script>
+    const statusEl = document.getElementById('status');
+    const resultsEl = document.getElementById('results');
+    const runBtn = document.getElementById('runBenchmark');
+    const clearBtn = document.getElementById('clearResults');
+    const dataPointsSelect = document.getElementById('dataPoints');
+    const iterationsSelect = document.getElementById('iterations');
+
+    function generateTimeSeriesData(points) {
+      const data = [];
+      const startDate = new Date('2020-01-01').getTime();
+      const dayMs = 24 * 60 * 60 * 1000;
+      
+      for (let i = 0; i < points; i++) {
+        const date = new Date(startDate + i * dayMs);
+        const value = Math.sin(i / 50) * 100 + Math.random() * 50 + 200;
+        data.push({
+          date: date.toISOString().split('T')[0],
+          timestamp: date.getTime(),
+          value: Math.round(value)
+        });
+      }
+      
+      return data;
+    }
+
+    function percentile(arr, p) {
+      const sorted = [...arr].sort((a, b) => a - b);
+      const index = Math.ceil((p / 100) * sorted.length) - 1;
+      return sorted[Math.max(0, index)];
+    }
+
+    function formatMs(ms) {
+      return `${ms.toFixed(2)}ms`;
+    }
+
+    async function benchmarkECharts(data, iterations) {
+      const times = [];
+      const container = document.getElementById('echarts');
+      
+      for (let i = 0; i < iterations; i++) {
+        // Clear container
+        container.innerHTML = '';
+        
+        // Force layout
+        await new Promise(resolve => requestAnimationFrame(resolve));
+        
+        const start = performance.now();
+        
+        const chart = echarts.init(container);
+        const option = {
+          xAxis: {
+            type: 'category',
+            data: data.map(d => d.date)
+          },
+          yAxis: {
+            type: 'value'
+          },
+          series: [{
+            data: data.map(d => d.value),
+            type: 'line',
+            smooth: true,
+            animation: false
+          }],
+          animation: false
+        };
+        
+        chart.setOption(option);
+        
+        // Wait for render
+        await new Promise(resolve => requestAnimationFrame(resolve));
+        
+        const elapsed = performance.now() - start;
+        times.push(elapsed);
+        
+        chart.dispose();
+      }
+      
+      return times;
+    }
+
+    async function benchmarkUPlot(data, iterations) {
+      const times = [];
+      const container = document.getElementById('uplot');
+      
+      for (let i = 0; i < iterations; i++) {
+        // Clear container
+        container.innerHTML = '';
+        
+        // Force layout
+        await new Promise(resolve => requestAnimationFrame(resolve));
+        
+        const start = performance.now();
+        
+        const timestamps = data.map(d => d.timestamp / 1000);
+        const values = data.map(d => d.value);
+        
+        const opts = {
+          width: container.clientWidth,
+          height: 400,
+          series: [
+            {},
+            {
+              label: "Value",
+              stroke: "blue",
+              width: 2
+            }
+          ],
+          axes: [
+            {},
+            {
+              label: "Value"
+            }
+          ]
+        };
+        
+        const uplot = new uPlot(opts, [timestamps, values], container);
+        
+        // Wait for render
+        await new Promise(resolve => requestAnimationFrame(resolve));
+        
+        const elapsed = performance.now() - start;
+        times.push(elapsed);
+        
+        uplot.destroy();
+      }
+      
+      return times;
+    }
+
+    function calculateStats(times) {
+      const avg = times.reduce((a, b) => a + b, 0) / times.length;
+      const min = Math.min(...times);
+      const max = Math.max(...times);
+      const p50 = percentile(times, 50);
+      const p95 = percentile(times, 95);
+      const p99 = percentile(times, 99);
+      
+      return { avg, min, max, p50, p95, p99 };
+    }
+
+    function formatResults(echartsStats, uplotStats, dataPoints, iterations) {
+      const speedup = ((echartsStats.avg / uplotStats.avg) * 100).toFixed(1);
+      const faster = echartsStats.avg < uplotStats.avg ? 'ECharts' : 'uPlot';
+      
+      return `
+═══════════════════════════════════════════════════════
+📊 CHART RENDERING BENCHMARK RESULTS
+═══════════════════════════════════════════════════════
+
+Configuration:
+  Data Points: ${dataPoints.toLocaleString()}
+  Iterations:  ${iterations}
+  Date:        ${new Date().toISOString()}
+
+───────────────────────────────────────────────────────
+📈 ECharts Performance
+───────────────────────────────────────────────────────
+  Average:  ${formatMs(echartsStats.avg)}
+  Min:      ${formatMs(echartsStats.min)}
+  Max:      ${formatMs(echartsStats.max)}
+  P50:      ${formatMs(echartsStats.p50)}
+  P95:      ${formatMs(echartsStats.p95)}
+  P99:      ${formatMs(echartsStats.p99)}
+
+───────────────────────────────────────────────────────
+📉 uPlot Performance
+───────────────────────────────────────────────────────
+  Average:  ${formatMs(uplotStats.avg)}
+  Min:      ${formatMs(uplotStats.min)}
+  Max:      ${formatMs(uplotStats.max)}
+  P50:      ${formatMs(uplotStats.p50)}
+  P95:      ${formatMs(uplotStats.p95)}
+  P99:      ${formatMs(uplotStats.p99)}
+
+───────────────────────────────────────────────────────
+🏆 Winner: ${faster}
+───────────────────────────────────────────────────────
+  Speedup:  ${speedup}%
+  
+  ${faster === 'uPlot' 
+    ? `uPlot is ${speedup}% faster than ECharts`
+    : `ECharts is ${speedup}% faster than uPlot`}
+
+═══════════════════════════════════════════════════════
+`;
+    }
+
+    async function runBenchmark() {
+      const dataPoints = parseInt(dataPointsSelect.value);
+      const iterations = parseInt(iterationsSelect.value);
+      
+      runBtn.disabled = true;
+      statusEl.innerHTML = '<div class="status running">⏳ Running benchmark...</div>';
+      resultsEl.style.display = 'none';
+      
+      try {
+        // Generate data
+        statusEl.innerHTML = '<div class="status running">⏳ Generating test data...</div>';
+        const data = generateTimeSeriesData(dataPoints);
+        
+        // Benchmark ECharts
+        statusEl.innerHTML = '<div class="status running">⏳ Benchmarking ECharts...</div>';
+        const echartsTimes = await benchmarkECharts(data, iterations);
+        const echartsStats = calculateStats(echartsTimes);
+        
+        // Benchmark uPlot
+        statusEl.innerHTML = '<div class="status running">⏳ Benchmarking uPlot...</div>';
+        const uplotTimes = await benchmarkUPlot(data, iterations);
+        const uplotStats = calculateStats(uplotTimes);
+        
+        // Display results
+        const results = formatResults(echartsStats, uplotStats, dataPoints, iterations);
+        resultsEl.innerHTML = `<pre>${results}</pre>`;
+        resultsEl.style.display = 'block';
+        
+        statusEl.innerHTML = `
+          <div class="status complete">
+            ✅ Benchmark complete!
+            <span class="metric">ECharts: ${formatMs(echartsStats.avg)}</span>
+            <span class="metric">uPlot: ${formatMs(uplotStats.avg)}</span>
+          </div>
+        `;
+        
+        // Render final preview
+        await renderPreview(data);
+        
+      } catch (error) {
+        statusEl.innerHTML = `<div class="status" style="background: #f8d7da; color: #721c24;">❌ Error: ${error.message}</div>`;
+        console.error(error);
+      } finally {
+        runBtn.disabled = false;
+      }
+    }
+
+    async function renderPreview(data) {
+      // ECharts preview
+      const echartsContainer = document.getElementById('echarts');
+      echartsContainer.innerHTML = '';
+      const echartsChart = echarts.init(echartsContainer);
+      echartsChart.setOption({
+        xAxis: {
+          type: 'category',
+          data: data.map(d => d.date)
+        },
+        yAxis: {
+          type: 'value'
+        },
+        series: [{
+          data: data.map(d => d.value),
+          type: 'line',
+          smooth: true
+        }],
+        tooltip: {
+          trigger: 'axis'
+        }
+      });
+      
+      // uPlot preview
+      const uplotContainer = document.getElementById('uplot');
+      uplotContainer.innerHTML = '';
+      const timestamps = data.map(d => d.timestamp / 1000);
+      const values = data.map(d => d.value);
+      
+      new uPlot({
+        width: uplotContainer.clientWidth,
+        height: 400,
+        series: [
+          {},
+          {
+            label: "Value",
+            stroke: "blue",
+            width: 2
+          }
+        ],
+        axes: [
+          {},
+          {
+            label: "Value"
+          }
+        ]
+      }, [timestamps, values], uplotContainer);
+    }
+
+    runBtn.addEventListener('click', runBenchmark);
+    clearBtn.addEventListener('click', () => {
+      resultsEl.style.display = 'none';
+      statusEl.innerHTML = '';
+    });
+
+    // Initial render with sample data
+    (async () => {
+      const sampleData = generateTimeSeriesData(1000);
+      await renderPreview(sampleData);
+    })();
+  </script>
+</body>
+</html>
