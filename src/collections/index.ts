@@ -1,7 +1,4 @@
-// TanStack DB Collections - Export all collection factories and instances
-
-// Factory functions (for creating new collection instances)
-export { createAssetsCollection } from './assets'
+// TanStack DB Collections - Export all collection instances and types
 
 // Singleton instances (for use with useLiveQuery in components)
 export {

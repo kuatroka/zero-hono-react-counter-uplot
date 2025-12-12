@@ -10,7 +10,7 @@ const superinvestorsRoutes = new Hono();
  * Used by TanStack DB collection for eager loading.
  */
 superinvestorsRoutes.get("/", async (c) => {
-    const limit = Math.min(parseInt(c.req.query("limit") || "5000", 10), 5000);
+    const limit = Math.min(parseInt(c.req.query("limit") || "20000", 10), 20000);
     const offset = parseInt(c.req.query("offset") || "0", 10);
 
     try {

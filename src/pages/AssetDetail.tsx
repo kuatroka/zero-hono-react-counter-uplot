@@ -219,7 +219,9 @@ export function AssetDetailPage() {
 
   if (!code) return <div className="p-6">Missing asset code.</div>;
 
-  if (isAssetsLoading) {
+  // Show loading while assets are loading OR while we have no data yet
+  // (Dexie collections may return empty array initially before IndexedDB loads)
+  if (isAssetsLoading || (assetsData?.length === 0)) {
     return <div className="p-6">Loading…</div>;
   }
 

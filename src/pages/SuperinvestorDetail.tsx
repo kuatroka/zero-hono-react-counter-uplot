@@ -1,41 +1,37 @@
 import { useParams, Link } from '@tanstack/react-router';
-import { useQuery } from '@tanstack/react-query';
+import { useLiveQuery } from '@tanstack/react-db';
 import { useContentReady } from '@/hooks/useContentReady';
 import { useEffect, useRef } from 'react';
-import { type Superinvestor } from '@/collections';
+import { superinvestorsCollection } from '@/collections';
 
 export function SuperinvestorDetailPage() {
   const { cik } = useParams({ strict: false }) as { cik?: string };
   const { onReady } = useContentReady();
 
-  // Fetch single superinvestor by CIK
-  const { data: record, isLoading } = useQuery({
-    queryKey: ['superinvestor', cik],
-    queryFn: async () => {
-      const res = await fetch(`/api/superinvestors/${cik}`);
-      if (!res.ok) {
-        if (res.status === 404) return null;
-        throw new Error('Failed to fetch superinvestor');
-      }
-      return res.json() as Promise<Superinvestor>;
-    },
-    staleTime: 5 * 60 * 1000,
-    enabled: !!cik,
-  });
+  // Query superinvestors from TanStack DB local collection (instant from IndexedDB cache)
+  // Data is preloaded on app init and persisted to IndexedDB
+  const { data: superinvestorsData, isLoading } = useLiveQuery(
+    (q) => q.from({ superinvestors: superinvestorsCollection }),
+  );
+
+  // Find the specific superinvestor record
+  const record = superinvestorsData?.find(s => s.cik === cik);
 
   // Signal ready when data is available (from cache or server)
   const readyCalledRef = useRef(false);
   useEffect(() => {
     if (readyCalledRef.current) return;
-    if (record !== undefined || !isLoading) {
+    if (record || (!isLoading && superinvestorsData !== undefined)) {
       readyCalledRef.current = true;
       onReady();
     }
-  }, [record, isLoading, onReady]);
+  }, [record, isLoading, superinvestorsData, onReady]);
 
   if (!cik) return <div className="p-6">Missing CIK.</div>;
 
-  if (isLoading) {
+  // Show loading while data is loading OR while we have no data yet
+  // (Dexie collections may return empty array initially before IndexedDB loads)
+  if (isLoading || (superinvestorsData?.length === 0)) {
     return <div className="p-6">Loading…</div>;
   }
 
