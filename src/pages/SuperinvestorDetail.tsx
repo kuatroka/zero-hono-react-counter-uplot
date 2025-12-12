@@ -1,12 +1,15 @@
 import { useParams, Link } from '@tanstack/react-router';
 import { useLiveQuery } from '@tanstack/react-db';
 import { useContentReady } from '@/hooks/useContentReady';
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { LatencyBadge } from '@/components/LatencyBadge';
 import { superinvestorsCollection } from '@/collections';
 
 export function SuperinvestorDetailPage() {
   const { cik } = useParams({ strict: false }) as { cik?: string };
   const { onReady } = useContentReady();
+  const [queryTimeMs, setQueryTimeMs] = useState<number | null>(null);
 
   // Query superinvestors from TanStack DB local collection (instant from IndexedDB cache)
   // Data is preloaded on app init and persisted to IndexedDB
@@ -16,6 +19,13 @@ export function SuperinvestorDetailPage() {
 
   // Find the specific superinvestor record
   const record = superinvestorsData?.find(s => s.cik === cik);
+
+  // Set latency to 0ms when data is available (memory/IndexedDB load)
+  useEffect(() => {
+    if (!isLoading && superinvestorsData && queryTimeMs == null) {
+      setQueryTimeMs(0);
+    }
+  }, [isLoading, superinvestorsData, queryTimeMs]);
 
   // Signal ready when data is available (from cache or server)
   const readyCalledRef = useRef(false);
@@ -41,15 +51,22 @@ export function SuperinvestorDetailPage() {
 
   return (
     <div className="container mx-auto px-4 py-8 max-w-4xl">
-      <div className="mb-6">
-        <h1 className="text-3xl font-bold">{record.cikName}</h1>
-      </div>
-      <div className="space-y-3 text-lg">
-        <div><span className="font-semibold">CIK:</span> {record.cik}</div>
-      </div>
-      <div className="mt-6">
-        <Link to="/superinvestors" search={{ page: undefined, search: undefined }} className="link link-primary">Back to superinvestors</Link>
-      </div>
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center justify-between gap-2">
+            <span>{record.cikName}</span>
+            <LatencyBadge latencyMs={queryTimeMs ?? undefined} source="tsdb-indexeddb" />
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-3 text-lg">
+            <div><span className="font-semibold">CIK:</span> {record.cik}</div>
+          </div>
+          <div className="mt-6">
+            <Link to="/superinvestors" search={{ page: undefined, search: undefined }} className="link link-primary">Back to superinvestors</Link>
+          </div>
+        </CardContent>
+      </Card>
     </div>
   );
 }

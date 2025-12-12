@@ -149,3 +149,111 @@ export async function clearPersistedSearchIndex(): Promise<void> {
         console.error('[SearchIndex] Failed to clear:', error);
     }
 }
+
+// ============================================================
+// DRILLDOWN DATA PERSISTENCE (separate from query cache)
+// ============================================================
+
+// Create a separate IndexedDB store for drilldown data
+// This stores the investor drilldown collection data for persistence across page refreshes
+const drilldownStore = typeof window !== 'undefined'
+    ? createStore('drilldown-cache', 'data')
+    : null;
+
+const DRILLDOWN_KEY = 'investor-drilldown-v1';
+
+export interface PersistedDrilldownData {
+    rows: Array<{
+        id: string;
+        ticker: string;
+        cik: string;
+        cikName: string;
+        cikTicker: string;
+        quarter: string;
+        cusip: string | null;
+        action: 'open' | 'close';
+        didOpen: boolean | null;
+        didAdd: boolean | null;
+        didReduce: boolean | null;
+        didClose: boolean | null;
+        didHold: boolean | null;
+    }>;
+    fetchedCombinations: string[];
+    bulkFetchedPairs: string[];
+    metadata?: {
+        totalRows: number;
+        persistedAt?: number;
+    };
+}
+
+/**
+ * Save drilldown data to IndexedDB
+ */
+export async function persistDrilldownData(data: PersistedDrilldownData): Promise<void> {
+    if (!drilldownStore) return;
+    
+    try {
+        const startTime = performance.now();
+        const dataWithTimestamp = {
+            ...data,
+            metadata: {
+                totalRows: data.rows.length,
+                persistedAt: Date.now(),
+            },
+        };
+        await set(DRILLDOWN_KEY, dataWithTimestamp, drilldownStore);
+        console.log(`[Drilldown] Persisted ${data.rows.length} rows to IndexedDB in ${(performance.now() - startTime).toFixed(1)}ms`);
+    } catch (error) {
+        console.error('[Drilldown] Failed to persist:', error);
+    }
+}
+
+/**
+ * Load drilldown data from IndexedDB
+ * Returns null if not found or expired (older than 1 day)
+ */
+export async function loadPersistedDrilldownData(): Promise<PersistedDrilldownData | null> {
+    if (!drilldownStore) return null;
+    
+    try {
+        const startTime = performance.now();
+        const data = await get<PersistedDrilldownData>(DRILLDOWN_KEY, drilldownStore);
+        
+        if (!data) {
+            console.log('[Drilldown] No persisted data found');
+            return null;
+        }
+        
+        // Check if expired (1 day for drilldown data - it changes more frequently)
+        const persistedAt = data.metadata?.persistedAt;
+        if (persistedAt) {
+            const age = Date.now() - persistedAt;
+            const maxAge = 1000 * 60 * 60 * 24; // 1 day
+            if (age > maxAge) {
+                console.log('[Drilldown] Persisted data expired, will refetch');
+                await del(DRILLDOWN_KEY, drilldownStore);
+                return null;
+            }
+        }
+        
+        console.log(`[Drilldown] Loaded ${data.rows.length} rows from IndexedDB in ${(performance.now() - startTime).toFixed(1)}ms`);
+        return data;
+    } catch (error) {
+        console.error('[Drilldown] Failed to load from IndexedDB:', error);
+        return null;
+    }
+}
+
+/**
+ * Clear persisted drilldown data
+ */
+export async function clearPersistedDrilldownData(): Promise<void> {
+    if (!drilldownStore) return;
+    
+    try {
+        await del(DRILLDOWN_KEY, drilldownStore);
+        console.log('[Drilldown] Cleared from IndexedDB');
+    } catch (error) {
+        console.error('[Drilldown] Failed to clear:', error);
+    }
+}

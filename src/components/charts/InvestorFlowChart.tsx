@@ -23,9 +23,10 @@ import { type InvestorFlow } from "@/types";
 interface InvestorFlowChartProps {
     data: readonly InvestorFlow[];
     ticker: string;
+    latencyBadge?: React.ReactNode;
 }
 
-export function InvestorFlowChart({ data, ticker }: InvestorFlowChartProps) {
+export function InvestorFlowChart({ data, ticker, latencyBadge }: InvestorFlowChartProps) {
     if (data.length === 0) {
         return (
             <Card>
@@ -40,7 +41,10 @@ export function InvestorFlowChart({ data, ticker }: InvestorFlowChartProps) {
     return (
         <Card>
             <CardHeader>
-                <CardTitle>Investor Flow for {ticker}</CardTitle>
+                <CardTitle className="flex items-center justify-between gap-2">
+                    <span>Investor Flow for {ticker}</span>
+                    {latencyBadge}
+                </CardTitle>
                 <CardDescription>
                     Inflow and Outflow per quarter
                 </CardDescription>

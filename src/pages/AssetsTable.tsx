@@ -2,7 +2,8 @@ import { useEffect, useRef, useState, useMemo } from 'react';
 import { useLiveQuery } from '@tanstack/react-db';
 import { Link, useNavigate, useSearch } from '@tanstack/react-router';
 import { DataTable, ColumnDef } from '@/components/DataTable';
-import { Card, CardContent } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { LatencyBadge } from '@/components/LatencyBadge';
 import { AllAssetsActivityChart } from '@/components/charts/AllAssetsActivityChart';
 import { useContentReady } from '@/hooks/useContentReady';
 import { assetsCollection, type Asset } from '@/collections';
@@ -132,6 +133,12 @@ export function AssetsTablePage() {
 
       <div className="grid gap-6 lg:grid-cols-2">
         <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center justify-between gap-2">
+              <span>Assets Table</span>
+              <LatencyBadge latencyMs={isLoading ? undefined : 0} source="tsdb-indexeddb" />
+            </CardTitle>
+          </CardHeader>
           <CardContent>
             {isLoading ? (
               <div className="py-8 text-center text-muted-foreground">Loading…</div>

@@ -1,6 +1,11 @@
 import { createCollection } from '@tanstack/db'
 import { queryCollectionOptions } from '@tanstack/query-db-collection'
 import { queryClient } from './instances'
+import { 
+    persistDrilldownData, 
+    loadPersistedDrilldownData,
+    type PersistedDrilldownData 
+} from './query-client'
 
 export interface InvestorDetail {
     id: string  // Unique key: cusip-quarter-action-cik
@@ -43,6 +48,76 @@ const inFlightBothActionsFetches = new Map<string, Promise<{ rows: InvestorDetai
 const inFlightBulkFetches = new Map<string, Promise<void>>()
 
 const bulkFetchedPairs = new Set<string>()
+
+// Track if we've loaded from IndexedDB
+let indexedDBLoaded = false
+let indexedDBLoadPromise: Promise<boolean> | null = null
+
+/**
+ * Load drilldown data from IndexedDB into the collection.
+ * Returns true if data was loaded, false otherwise.
+ */
+export async function loadDrilldownFromIndexedDB(): Promise<boolean> {
+    if (indexedDBLoaded) return true
+    if (indexedDBLoadPromise) return indexedDBLoadPromise
+    
+    indexedDBLoadPromise = (async () => {
+        try {
+            const persisted = await loadPersistedDrilldownData()
+            if (!persisted || persisted.rows.length === 0) {
+                indexedDBLoaded = true
+                return false
+            }
+            
+            // Restore rows to collection
+            investorDrilldownCollection.utils.writeUpsert(persisted.rows)
+            
+            // Restore fetched combinations
+            for (const combo of persisted.fetchedCombinations) {
+                fetchedCombinations.add(combo)
+            }
+            
+            // Restore bulk fetched pairs
+            for (const pair of persisted.bulkFetchedPairs) {
+                bulkFetchedPairs.add(pair)
+            }
+            
+            indexedDBLoaded = true
+            console.log(`[Drilldown] Restored ${persisted.rows.length} rows from IndexedDB`)
+            return true
+        } catch (error) {
+            console.error('[Drilldown] Failed to load from IndexedDB:', error)
+            indexedDBLoaded = true
+            return false
+        }
+    })()
+    
+    return indexedDBLoadPromise
+}
+
+/**
+ * Save current drilldown data to IndexedDB.
+ * Call this after fetching new data.
+ */
+export async function saveDrilldownToIndexedDB(): Promise<void> {
+    const rows = getAllDrilldownRows()
+    if (rows.length === 0) return
+    
+    const data: PersistedDrilldownData = {
+        rows,
+        fetchedCombinations: Array.from(fetchedCombinations),
+        bulkFetchedPairs: Array.from(bulkFetchedPairs),
+    }
+    
+    await persistDrilldownData(data)
+}
+
+/**
+ * Check if data was loaded from IndexedDB (for latency badge source detection)
+ */
+export function wasLoadedFromIndexedDB(): boolean {
+    return indexedDBLoaded && getAllDrilldownRows().length > 0
+}
 
 function makePairKey(ticker: string, cusip: string): string {
     return `${ticker}-${cusip}`
@@ -177,6 +252,10 @@ export async function fetchDrilldownBothActions(
         fetchedCombinations.add(`${ticker}-${cusip}-${quarter}-close`)
 
         const elapsedMs = Math.round(performance.now() - startTime)
+        
+        // Persist to IndexedDB after fetching
+        saveDrilldownToIndexedDB().catch(err => console.warn('[Drilldown] Failed to persist:', err))
+        
         return { rows, queryTimeMs: elapsedMs }
     })()
 
@@ -270,6 +349,9 @@ export async function backgroundLoadAllDrilldownData(
     onProgress?.(1, 1)
     const elapsedMs = Math.round(performance.now() - startMs)
     console.log(`[Background Load] ${ticker}/${cusip}: fetched ${rows.length} rows in one bulk call (wall=${elapsedMs}ms)`)
+    
+    // Persist to IndexedDB after bulk fetch
+    saveDrilldownToIndexedDB().catch(err => console.warn('[Drilldown] Failed to persist:', err))
     })()
 
     inFlightBulkFetches.set(pairKey, promise)

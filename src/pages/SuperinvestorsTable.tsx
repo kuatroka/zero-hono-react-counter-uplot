@@ -3,6 +3,7 @@ import { useLiveQuery } from '@tanstack/react-db';
 import { Link, useNavigate, useSearch } from '@tanstack/react-router';
 import { DataTable, ColumnDef } from '@/components/DataTable';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { LatencyBadge } from '@/components/LatencyBadge';
 import { useContentReady } from '@/hooks/useContentReady';
 import { superinvestorsCollection, type Superinvestor } from '@/collections';
 
@@ -124,7 +125,10 @@ export function SuperinvestorsTablePage() {
     <div className="container mx-auto px-4 py-8 max-w-7xl">
       <Card>
         <CardHeader>
-          <CardTitle className="text-3xl font-bold tracking-tight">Superinvestors</CardTitle>
+          <CardTitle className="flex items-center justify-between gap-2">
+            <span className="text-3xl font-bold tracking-tight">Superinvestors</span>
+            <LatencyBadge latencyMs={isLoading ? undefined : 0} source="tsdb-indexeddb" />
+          </CardTitle>
           <CardDescription>Browse and search institutional investors (13F filers)</CardDescription>
         </CardHeader>
         <CardContent>

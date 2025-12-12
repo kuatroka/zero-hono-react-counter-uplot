@@ -2,11 +2,13 @@ import { useMemo, useEffect, useState } from "react";
 import { Link } from "@tanstack/react-router";
 import { useLiveQuery } from "@tanstack/react-db";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { LatencyBadge, type DataFlow } from "@/components/LatencyBadge";
 import { DataTable, ColumnDef } from "@/components/DataTable";
 import {
   fetchDrilldownBothActions,
   getDrilldownDataFromCollection,
   investorDrilldownCollection,
+  loadDrilldownFromIndexedDB,
   type InvestorDetail
 } from "@/collections/investor-details";
 
@@ -42,7 +44,7 @@ export function InvestorActivityDrilldownTable({
   const [isLoading, setIsLoading] = useState(false);
   const [isError, setIsError] = useState(false);
   const [queryTimeMs, setQueryTimeMs] = useState<number | null>(null);
-  const [fromCache, setFromCache] = useState(false);
+  const [dataFlow, setDataFlow] = useState<DataFlow>("unknown");
 
   // Subscribe to the collection for this slice
   const slice = useLiveQuery((q) =>
@@ -51,40 +53,46 @@ export function InvestorActivityDrilldownTable({
       .select(({ rows }) => rows)
   );
 
-  // Fetch if missing; otherwise use local slice instantly
+  // Load from IndexedDB first, then fetch if missing
   useEffect(() => {
     if (!enabled) return;
 
-    const localRows = getDrilldownDataFromCollection(ticker, cusip, quarter, action);
-    if (localRows) {
-      setData(localRows);
-      setQueryTimeMs(0);
-      setFromCache(true);
-      return;
-    }
-
     let cancelled = false;
-    setIsLoading(true);
-    setIsError(false);
 
-    fetchDrilldownBothActions(ticker, cusip, quarter)
-      .then((result) => {
+    (async () => {
+      // Try to load from IndexedDB first
+      const loadedFromIDB = await loadDrilldownFromIndexedDB();
+      if (cancelled) return;
+
+      // Check if data is now available in collection
+      const localRows = getDrilldownDataFromCollection(ticker, cusip, quarter, action);
+      if (localRows && localRows.length > 0) {
+        setData(localRows);
+        setQueryTimeMs(0);
+        setDataFlow(loadedFromIDB ? "tsdb-indexeddb" : "tsdb-memory");
+        return;
+      }
+
+      // If still no data, fetch from API
+      setIsLoading(true);
+      setIsError(false);
+
+      try {
+        const result = await fetchDrilldownBothActions(ticker, cusip, quarter);
         if (cancelled) return;
         const filtered = result.rows.filter((r) => r.action === action);
         setData(filtered);
         setQueryTimeMs(result.queryTimeMs);
-        setFromCache(result.queryTimeMs === 0);
-      })
-      .catch((err) => {
+        setDataFlow(result.queryTimeMs === 0 ? "tsdb-memory" : "tsdb-api");
+      } catch (err) {
         if (cancelled) return;
         console.error("Failed to fetch drilldown data:", err);
         setIsError(true);
         setData([]);
-      })
-      .finally(() => {
-        if (cancelled) return;
-        setIsLoading(false);
-      });
+      } finally {
+        if (!cancelled) setIsLoading(false);
+      }
+    })();
 
     return () => {
       cancelled = true;
@@ -95,11 +103,11 @@ export function InvestorActivityDrilldownTable({
   useEffect(() => {
     if (slice?.data && slice.data.length > 0) {
       const filtered = slice.data.filter(
-        (r) => r.ticker === ticker && r.cusip === cusip && r.quarter === quarter && r.action === action
+        (r: InvestorDetail) => r.ticker === ticker && r.cusip === cusip && r.quarter === quarter && r.action === action
       );
       if (filtered.length > 0) {
         setData(filtered);
-        setFromCache(true);
+        setDataFlow("tsdb-memory");
         if (queryTimeMs === null) setQueryTimeMs(0);
       }
     }
@@ -172,14 +180,21 @@ export function InvestorActivityDrilldownTable({
   const isInitialLoading = isLoading && !hasRows;
   const hasData = data.length > 0 || !isLoading;
 
-  // Format latency display
-  const latencyDisplay = (() => {
-    if (queryTimeMs === null) return null;
-    if (fromCache) {
-      return <span className="text-green-600 font-medium">⚡ {queryTimeMs.toFixed(1)}ms (local cache)</span>;
+  const dataFlowLabel = (() => {
+    switch (dataFlow) {
+      case "tsdb-indexeddb": return "Loaded from IndexedDB";
+      case "tsdb-memory": return "Served from in-memory cache";
+      case "tsdb-api": return "Fetched from DuckDB API";
+      default: return "Loading...";
     }
-    return <span className="text-amber-600 font-medium">🌐 {queryTimeMs.toFixed(1)}ms (API fetch)</span>;
   })();
+
+  const latencyDisplay = (
+    <LatencyBadge
+      latencyMs={queryTimeMs ?? undefined}
+      source={dataFlow}
+    />
+  );
 
   return (
     <Card>
@@ -188,7 +203,7 @@ export function InvestorActivityDrilldownTable({
           <span>Superinvestors who {titleAction} positions in {ticker} ({quarter})</span>
         </CardTitle>
         <CardDescription className="flex items-center justify-between">
-          <span>Backed by TanStack DB local collection</span>
+          <span>{dataFlowLabel}</span>
           {latencyDisplay}
         </CardDescription>
       </CardHeader>

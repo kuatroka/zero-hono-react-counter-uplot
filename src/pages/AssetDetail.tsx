@@ -6,6 +6,7 @@ import { InvestorActivityUplotChart } from '@/components/charts/InvestorActivity
 import { InvestorActivityEchartsChart } from '@/components/charts/InvestorActivityEchartsChart';
 import { InvestorFlowChart } from '@/components/charts/InvestorFlowChart';
 import { InvestorActivityDrilldownTable } from '@/components/InvestorActivityDrilldownTable';
+import { LatencyBadge } from '@/components/LatencyBadge';
 import { useContentReady } from '@/hooks/useContentReady';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { assetsCollection } from '@/collections';
@@ -51,9 +52,12 @@ export function AssetDetailPage() {
   }, [record, isAssetsLoading, assetsData, onReady]);
 
   // Query investor activity from DuckDB
-  const { data: activityData, isLoading: isActivityLoading } = useQuery({
+  const activityFetchStartRef = useRef<number | null>(null);
+  const [activityQueryTimeMs, setActivityQueryTimeMs] = useState<number | null>(null);
+  const { data: activityData, isLoading: isActivityLoading, isFetching: isActivityFetching } = useQuery({
     queryKey: ['investor-activity', hasCusip ? cusip : code],
     queryFn: async () => {
+      activityFetchStartRef.current = performance.now();
       const res = await fetch(`/api/all-assets-activity?${hasCusip ? `cusip=${cusip}` : `ticker=${code}`}`);
       if (!res.ok) throw new Error('Failed to fetch investor activity');
       const data = await res.json();
@@ -63,11 +67,25 @@ export function AssetDetailPage() {
     staleTime: 5 * 60 * 1000,
   });
 
+  // Track latency: if we started a fetch, measure it; otherwise it's cached (0ms)
+  useEffect(() => {
+    if (activityData && !isActivityFetching) {
+      if (activityFetchStartRef.current !== null) {
+        setActivityQueryTimeMs(Math.round(performance.now() - activityFetchStartRef.current));
+        activityFetchStartRef.current = null;
+      } else {
+        setActivityQueryTimeMs(0); // Data from cache, no network call
+      }
+    }
+  }, [activityData, isActivityFetching]);
+
   // Query investor flow from DuckDB
-  const { data: flowData, isLoading: isFlowLoading } = useQuery({
+  const flowFetchStartRef = useRef<number | null>(null);
+  const [flowQueryTimeMs, setFlowQueryTimeMs] = useState<number | null>(null);
+  const { data: flowData, isLoading: isFlowLoading, isFetching: isFlowFetching } = useQuery({
     queryKey: ['investor-flow', code],
     queryFn: async () => {
-      const t0 = performance.now();
+      flowFetchStartRef.current = performance.now();
       const url = `/api/investor-flow?ticker=${code}`;
       try {
         const res = await fetch(url);
@@ -78,7 +96,7 @@ export function AssetDetailPage() {
         }
         const data = await res.json();
         const rows = (data.rows || []) as InvestorFlow[];
-        console.debug(`[InvestorFlow] fetched ${rows.length} rows for ${code} in ${Math.round(performance.now() - t0)}ms`, rows.slice(0, 3));
+        console.debug(`[InvestorFlow] fetched ${rows.length} rows for ${code}`, rows.slice(0, 3));
         return rows;
       } catch (err) {
         console.warn(`[InvestorFlow] failed for ${url}:`, err);
@@ -88,6 +106,18 @@ export function AssetDetailPage() {
     enabled: Boolean(code),
     staleTime: 5 * 60 * 1000,
   });
+
+  // Track latency: if we started a fetch, measure it; otherwise it's cached (0ms)
+  useEffect(() => {
+    if (flowData && !isFlowFetching) {
+      if (flowFetchStartRef.current !== null) {
+        setFlowQueryTimeMs(Math.round(performance.now() - flowFetchStartRef.current));
+        flowFetchStartRef.current = null;
+      } else {
+        setFlowQueryTimeMs(0); // Data from cache, no network call
+      }
+    }
+  }, [flowData, isFlowFetching]);
 
   const activityRows = activityData ?? [];
   const flowRows = flowData ?? [];
@@ -249,7 +279,7 @@ export function AssetDetailPage() {
         <div className="text-center">
           <h1 className="text-3xl font-bold whitespace-nowrap overflow-hidden text-ellipsis">({record.asset}) {record.assetName}</h1>
         </div>
-        <div className="text-right"></div>
+        <div className="text-right" />
       </div>
 
       {/* Chart + drilldown section */}
@@ -270,11 +300,23 @@ export function AssetDetailPage() {
                 data={activityRows}
                 ticker={record.asset}
                 onBarClick={({ quarter, action }) => handleSelectionChange({ quarter, action })}
+                latencyBadge={
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] text-muted-foreground">data</span>
+                    <LatencyBadge latencyMs={activityQueryTimeMs ?? undefined} source={activityQueryTimeMs === 0 ? "rq-memory" : "rq-api"} />
+                  </div>
+                }
               />
               <InvestorActivityEchartsChart
                 data={activityRows}
                 ticker={record.asset}
                 onBarClick={({ quarter, action }) => handleSelectionChange({ quarter, action })}
+                latencyBadge={
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] text-muted-foreground">data</span>
+                    <LatencyBadge latencyMs={activityQueryTimeMs ?? undefined} source={activityQueryTimeMs === 0 ? "rq-memory" : "rq-api"} />
+                  </div>
+                }
               />
             </div>
 
@@ -285,7 +327,11 @@ export function AssetDetailPage() {
                   Loading flow chart...
                 </div>
               ) : (
-                <InvestorFlowChart data={flowRows} ticker={record.asset} />
+                <InvestorFlowChart
+                  data={flowRows}
+                  ticker={record.asset}
+                  latencyBadge={<LatencyBadge latencyMs={flowQueryTimeMs ?? undefined} source={flowQueryTimeMs === 0 ? "rq-memory" : "rq-api"} />}
+                />
               )}
             </div>
 

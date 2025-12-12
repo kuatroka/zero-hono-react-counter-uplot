@@ -3,6 +3,8 @@
 import { useQuery } from "@tanstack/react-query";
 import { OpenedClosedBarChart } from "./OpenedClosedBarChart";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { LatencyBadge } from "@/components/LatencyBadge";
+import { useState, useEffect, useRef } from "react";
 import type { AllAssetsActivityResponse } from "@/types/duckdb";
 
 async function fetchAllAssetsActivity(): Promise<AllAssetsActivityResponse> {
@@ -23,12 +25,29 @@ interface AllAssetsActivityChartProps {
  * Data is fetched from DuckDB via /api/all-assets-activity endpoint.
  */
 export function AllAssetsActivityChart({ onBarClick }: AllAssetsActivityChartProps) {
-  const { data, isLoading, isError, error } = useQuery({
+  const fetchStartRef = useRef<number | null>(null);
+  const [queryTimeMs, setQueryTimeMs] = useState<number | null>(null);
+  const { data, isLoading, isFetching, isError, error } = useQuery({
     queryKey: ["all-assets-activity"],
-    queryFn: fetchAllAssetsActivity,
+    queryFn: async () => {
+      fetchStartRef.current = performance.now();
+      return fetchAllAssetsActivity();
+    },
     staleTime: 5 * 60 * 1000, // 5 minutes
     gcTime: 10 * 60 * 1000,   // 10 minutes
   });
+
+  // Track latency: if we started a fetch, measure it; otherwise it's cached (0ms)
+  useEffect(() => {
+    if (data && !isFetching) {
+      if (fetchStartRef.current !== null) {
+        setQueryTimeMs(Math.round(performance.now() - fetchStartRef.current));
+        fetchStartRef.current = null;
+      } else {
+        setQueryTimeMs(0); // Data from cache, no network call
+      }
+    }
+  }, [data, isFetching]);
 
   if (isLoading) {
     return (
@@ -66,6 +85,7 @@ export function AllAssetsActivityChart({ onBarClick }: AllAssetsActivityChartPro
       title="All Assets Activity (ECharts)"
       description="Total opened (green) and closed (red) positions across all assets by quarter"
       onBarClick={onBarClick}
+      latencyBadge={<LatencyBadge latencyMs={queryTimeMs ?? undefined} source={queryTimeMs === 0 ? "rq-memory" : "rq-api"} />}
       unitLabel="positions"
     />
   );

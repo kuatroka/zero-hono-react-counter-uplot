@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, useMemo } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import { useLiveQuery } from "@tanstack/react-db";
 import { Input } from "@/components/ui/input";
+import { LatencyBadge } from "@/components/LatencyBadge";
 import { searchesCollection, preloadSearches, getSyncState, buildSearchIndex, searchWithIndex, isSearchIndexReady, loadPrecomputedIndex } from "@/collections/searches";
 import type { SearchResult as CollectionSearchResult } from "@/collections/searches";
 
@@ -262,11 +263,13 @@ export function DuckDBGlobalSearch() {
           onKeyDown={handleKeyDown}
           className="w-full sm:w-[30rem] pr-16"
         />
-        {/* Query time badge */}
-        {queryTimeMs !== undefined && shouldSearch && (
-          <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] text-muted-foreground bg-muted px-1.5 py-0.5 rounded">
-            {queryTimeMs.toFixed(1)}ms
-          </span>
+        {queryTimeMs !== undefined && shouldSearch && !isFetching && (
+          <div className="absolute right-2 top-1/2 -translate-y-1/2">
+            <LatencyBadge
+              latencyMs={queryTimeMs}
+              source={isUsingApi ? "rq-api" : "tsdb-indexeddb"}
+            />
+          </div>
         )}
         {isFetching && (
           <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] text-muted-foreground">

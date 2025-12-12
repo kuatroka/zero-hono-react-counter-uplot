@@ -63,6 +63,8 @@ interface OpenedClosedBarChartProps {
   onBarClick?: (selection: { quarter: string; action: "open" | "close" }) => void;
   /** Unit label for tooltip (default: "positions") */
   unitLabel?: string;
+  /** Optional latency badge */
+  latencyBadge?: React.ReactNode;
 }
 
 /**
@@ -74,12 +76,13 @@ interface OpenedClosedBarChartProps {
  * - Per-asset investor activity (AssetDetail page)
  * - All-assets aggregated activity (Dashboard/Overview)
  */
-export function OpenedClosedBarChart({ 
-  data, 
+export function OpenedClosedBarChart({
+  data,
   title,
   description,
   onBarClick,
   unitLabel = "positions",
+  latencyBadge,
 }: OpenedClosedBarChartProps) {
   const chartRef = useRef<any>(null);
   const rafRef = useRef<number | null>(null);
@@ -258,7 +261,10 @@ export function OpenedClosedBarChart({
   return (
     <Card>
       <CardHeader>
-        <CardTitle>{title}</CardTitle>
+        <CardTitle className="flex items-center justify-between gap-2">
+          <span>{title}</span>
+          {latencyBadge}
+        </CardTitle>
         {description && <CardDescription>{description}</CardDescription>}
       </CardHeader>
       <CardContent className="h-[450px] w-full">

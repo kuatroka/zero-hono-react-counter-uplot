@@ -15,12 +15,14 @@ interface InvestorActivityUplotChartProps {
   data: readonly CusipQuarterInvestorActivity[];
   ticker: string;
   onBarClick?: (payload: { quarter: string; action: "open" | "close" }) => void;
+  latencyBadge?: React.ReactNode;
 }
 
 export function InvestorActivityUplotChart({
   data,
   ticker,
   onBarClick,
+  latencyBadge,
 }: InvestorActivityUplotChartProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<uPlot | null>(null);
@@ -163,7 +165,10 @@ export function InvestorActivityUplotChart({
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Investor Activity for {ticker} (uPlot)</CardTitle>
+        <CardTitle className="flex items-center justify-between gap-2">
+          <span>Investor Activity for {ticker} (uPlot)</span>
+          {latencyBadge}
+        </CardTitle>
         <CardDescription>
           Alternative rendering using uPlot with opened (green) vs closed (red) positions.
         </CardDescription>
