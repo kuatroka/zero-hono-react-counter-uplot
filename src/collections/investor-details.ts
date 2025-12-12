@@ -36,10 +36,12 @@ function getAllDrilldownRows(): InvestorDetail[] {
     return Array.from(investorDrilldownCollection.entries()).map(([, value]) => value)
 }
 
-// Track which [ticker, cusip, quarter, action] combinations have been fetched
 const fetchedCombinations = new Set<string>()
 
-// Track which [ticker, cusip] pairs have had a bulk background load completed
+const inFlightBothActionsFetches = new Map<string, Promise<{ rows: InvestorDetail[], queryTimeMs: number }>>()
+
+const inFlightBulkFetches = new Map<string, Promise<void>>()
+
 const bulkFetchedPairs = new Set<string>()
 
 function makePairKey(ticker: string, cusip: string): string {
@@ -77,74 +79,20 @@ export async function fetchDrilldownData(
 ): Promise<{ rows: InvestorDetail[], queryTimeMs: number, fromCache: boolean }> {
     const cacheKey = `${ticker}-${cusip}-${quarter}-${action}`
 
-    // Check if we already have the data in the collection
     const cachedRows = getAllDrilldownRows().filter((item) => item.ticker === ticker && item.cusip === cusip && item.quarter === quarter && item.action === action)
     if (cachedRows.length > 0) {
         fetchedCombinations.add(cacheKey)
         return { rows: cachedRows, queryTimeMs: 0, fromCache: true }
     }
 
-    // Also check the Set for cases where we know it was fetched but returned 0 rows
     if (fetchedCombinations.has(cacheKey)) {
         return { rows: [], queryTimeMs: 0, fromCache: true }
     }
 
-    const startTime = performance.now()
-
-    const searchParams = new URLSearchParams()
-    searchParams.set('ticker', ticker)
-    searchParams.set('cusip', cusip)
-    searchParams.set('quarter', quarter)
-    searchParams.set('action', action)
-
-    const res = await fetch(`/api/duckdb-investor-drilldown?${searchParams.toString()}`)
-    if (!res.ok) throw new Error('Failed to fetch investor details')
-    const data = await res.json()
-
-    const queryTimeMs = performance.now() - startTime
-
-    // Transform API response to InvestorDetail format
-    const rows: InvestorDetail[] = (data.rows || []).map((row: any) => ({
-        id: `${cusip ?? row.cusip ?? 'nocusip'}-${quarter}-${action}-${row.cik ?? 'nocik'}`,
-        ticker,
-        cik: row.cik != null ? String(row.cik) : '',
-        cikName: row.cikName ?? '',
-        cikTicker: row.cikTicker ?? '',
-        quarter: row.quarter ?? quarter,
-        cusip: row.cusip ?? cusip ?? null,
-        action,
-        didOpen: row.didOpen ?? null,
-        didAdd: row.didAdd ?? null,
-        didReduce: row.didReduce ?? null,
-        didClose: row.didClose ?? null,
-        didHold: row.didHold ?? null,
-    }))
-    console.debug(
-        `[Drilldown] fetched ${rows.length} rows for ${ticker} ${quarter} ${action}, fromCache? ${false}`
-    )
-
-    // Deduplicate by ID before writing
-    const existingIds = new Set(getAllDrilldownRows().map(r => r.id))
-    const dedupedRows = rows.filter(r => !existingIds.has(r.id))
-    console.debug(
-        `[Drilldown] inserting ${dedupedRows.length} new rows (existing ${existingIds.size}) for ${ticker} ${quarter} ${action}`
-    )
-
-    if (dedupedRows.length > 0) {
-        if (typeof investorDrilldownCollection.utils.writeUpsert !== 'function') {
-            console.error('[Drilldown] writeUpsert missing on collection utils');
-        } else {
-            investorDrilldownCollection.utils.writeUpsert(dedupedRows)
-            console.debug(
-                `[Drilldown] collection size after upsert: ${investorDrilldownCollection.size}`
-            )
-        }
-    }
-
+    const result = await fetchDrilldownBothActions(ticker, cusip, quarter)
+    const filtered = (result.rows || []).filter((r) => r.action === action)
     fetchedCombinations.add(cacheKey)
-
-    const finalRows = getAllDrilldownRows().filter((item) => item.ticker === ticker && item.cusip === cusip && item.quarter === quarter && item.action === action)
-    return { rows: finalRows, queryTimeMs, fromCache: false }
+    return { rows: filtered, queryTimeMs: result.queryTimeMs, fromCache: result.queryTimeMs === 0 }
 }
 
 /**
@@ -156,6 +104,12 @@ export async function fetchDrilldownBothActions(
     cusip: string,
     quarter: string,
 ): Promise<{ rows: InvestorDetail[], queryTimeMs: number }> {
+    const bothKey = `${ticker}-${cusip}-${quarter}-both`
+    const inFlight = inFlightBothActionsFetches.get(bothKey)
+    if (inFlight) {
+        return inFlight
+    }
+
     const openKey = `${ticker}-${cusip}-${quarter}-open`
     const closeKey = `${ticker}-${cusip}-${quarter}-close`
 
@@ -179,51 +133,58 @@ export async function fetchDrilldownBothActions(
         return { rows: cachedRows, queryTimeMs: 0 }
     }
 
-    const startTime = performance.now()
+    const promise = (async () => {
+        const startTime = performance.now()
 
-    const searchParams = new URLSearchParams()
-    searchParams.set('ticker', ticker)
-    searchParams.set('cusip', cusip)
-    searchParams.set('quarter', quarter)
-    searchParams.set('action', 'both')
-    searchParams.set('limit', '2000')
+        const searchParams = new URLSearchParams()
+        searchParams.set('ticker', ticker)
+        searchParams.set('cusip', cusip)
+        searchParams.set('quarter', quarter)
+        searchParams.set('action', 'both')
+        searchParams.set('limit', '2000')
 
-    const res = await fetch(`/api/duckdb-investor-drilldown?${searchParams.toString()}`)
-    if (!res.ok) throw new Error('Failed to fetch investor details (both actions)')
-    const data = await res.json()
+        const res = await fetch(`/api/duckdb-investor-drilldown?${searchParams.toString()}`)
+        if (!res.ok) throw new Error('Failed to fetch investor details (both actions)')
+        const data = await res.json()
 
-    const rows: InvestorDetail[] = (data.rows || []).map((row: any) => {
-        const action: 'open' | 'close' = row.action === 'close' ? 'close' : 'open'
-        const rowCusip = row.cusip ?? cusip
-        return {
-            id: `${rowCusip ?? 'nocusip'}-${row.quarter ?? quarter}-${action}-${row.cik ?? 'nocik'}`,
-            ticker,
-            cik: row.cik != null ? String(row.cik) : '',
-            cikName: row.cikName ?? '',
-            cikTicker: row.cikTicker ?? '',
-            quarter: row.quarter ?? quarter,
-            cusip: rowCusip ?? null,
-            action,
-            didOpen: row.didOpen ?? null,
-            didAdd: row.didAdd ?? null,
-            didReduce: row.didReduce ?? null,
-            didClose: row.didClose ?? null,
-            didHold: row.didHold ?? null,
+        const rows: InvestorDetail[] = (data.rows || []).map((row: any) => {
+            const action: 'open' | 'close' = row.action === 'close' ? 'close' : 'open'
+            const rowCusip = row.cusip ?? cusip
+            return {
+                id: `${rowCusip ?? 'nocusip'}-${row.quarter ?? quarter}-${action}-${row.cik ?? 'nocik'}`,
+                ticker,
+                cik: row.cik != null ? String(row.cik) : '',
+                cikName: row.cikName ?? '',
+                cikTicker: row.cikTicker ?? '',
+                quarter: row.quarter ?? quarter,
+                cusip: rowCusip ?? null,
+                action,
+                didOpen: row.didOpen ?? null,
+                didAdd: row.didAdd ?? null,
+                didReduce: row.didReduce ?? null,
+                didClose: row.didClose ?? null,
+                didHold: row.didHold ?? null,
+            }
+        })
+
+        const existingIds = new Set(getAllDrilldownRows().map(r => r.id))
+        const dedupedRows = rows.filter(r => !existingIds.has(r.id))
+        if (dedupedRows.length > 0) {
+            investorDrilldownCollection.utils.writeUpsert(dedupedRows)
         }
+
+        fetchedCombinations.add(`${ticker}-${cusip}-${quarter}-open`)
+        fetchedCombinations.add(`${ticker}-${cusip}-${quarter}-close`)
+
+        const elapsedMs = Math.round(performance.now() - startTime)
+        return { rows, queryTimeMs: elapsedMs }
+    })()
+
+    inFlightBothActionsFetches.set(bothKey, promise)
+    promise.finally(() => {
+        inFlightBothActionsFetches.delete(bothKey)
     })
-
-    const existingIds = new Set(getAllDrilldownRows().map(r => r.id))
-    const dedupedRows = rows.filter(r => !existingIds.has(r.id))
-    if (dedupedRows.length > 0) {
-        investorDrilldownCollection.utils.writeUpsert(dedupedRows)
-    }
-
-    // Mark both combinations as fetched
-    fetchedCombinations.add(`${ticker}-${cusip}-${quarter}-open`)
-    fetchedCombinations.add(`${ticker}-${cusip}-${quarter}-close`)
-
-    const elapsedMs = Math.round(performance.now() - startTime)
-    return { rows, queryTimeMs: elapsedMs }
+    return promise
 }
 
 /**
@@ -233,10 +194,17 @@ export async function fetchDrilldownBothActions(
 export async function backgroundLoadAllDrilldownData(
     ticker: string,
     cusip: string,
-    quarters: string[],
+    _quarters: string[],
     onProgress?: (loaded: number, total: number) => void
 ): Promise<void> {
     const pairKey = makePairKey(ticker, cusip)
+
+    const inFlight = inFlightBulkFetches.get(pairKey)
+    if (inFlight) {
+        return inFlight
+    }
+
+    const promise = (async () => {
 
     // Seed fetched set with existing collection rows to avoid refetching on refresh
     const existingRows = getAllDrilldownRows()
@@ -302,6 +270,13 @@ export async function backgroundLoadAllDrilldownData(
     onProgress?.(1, 1)
     const elapsedMs = Math.round(performance.now() - startMs)
     console.log(`[Background Load] ${ticker}/${cusip}: fetched ${rows.length} rows in one bulk call (wall=${elapsedMs}ms)`)
+    })()
+
+    inFlightBulkFetches.set(pairKey, promise)
+    promise.finally(() => {
+        inFlightBulkFetches.delete(pairKey)
+    })
+    return promise
 }
 
 /**

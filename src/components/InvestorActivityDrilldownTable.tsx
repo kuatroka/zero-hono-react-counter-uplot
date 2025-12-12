@@ -1,10 +1,10 @@
-import { useMemo, useEffect, useState, useCallback } from "react";
+import { useMemo, useEffect, useState } from "react";
 import { Link } from "@tanstack/react-router";
 import { useLiveQuery } from "@tanstack/react-db";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { DataTable, ColumnDef } from "@/components/DataTable";
 import {
-  fetchDrilldownData,
+  fetchDrilldownBothActions,
   getDrilldownDataFromCollection,
   investorDrilldownCollection,
   type InvestorDetail
@@ -67,12 +67,13 @@ export function InvestorActivityDrilldownTable({
     setIsLoading(true);
     setIsError(false);
 
-    fetchDrilldownData(ticker, cusip, quarter, action)
+    fetchDrilldownBothActions(ticker, cusip, quarter)
       .then((result) => {
         if (cancelled) return;
-        setData(result.rows);
+        const filtered = result.rows.filter((r) => r.action === action);
+        setData(filtered);
         setQueryTimeMs(result.queryTimeMs);
-        setFromCache(result.fromCache);
+        setFromCache(result.queryTimeMs === 0);
       })
       .catch((err) => {
         if (cancelled) return;

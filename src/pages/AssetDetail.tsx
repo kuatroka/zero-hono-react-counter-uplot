@@ -9,7 +9,7 @@ import { InvestorActivityDrilldownTable } from '@/components/InvestorActivityDri
 import { useContentReady } from '@/hooks/useContentReady';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { assetsCollection } from '@/collections';
-import { backgroundLoadAllDrilldownData, fetchDrilldownData, fetchDrilldownBothActions } from '@/collections/investor-details';
+import { backgroundLoadAllDrilldownData, fetchDrilldownBothActions } from '@/collections/investor-details';
 
 import { type CusipQuarterInvestorActivity, type InvestorFlow } from '@/schema';
 
@@ -173,9 +173,11 @@ export function AssetDetailPage() {
     
     // Eagerly load BOTH actions for the latest quarter to make clicks instant
     if (latestQuarter && code && record?.cusip) {
+      const cusipValue = record.cusip;
+      if (!cusipValue) return;
       const eagerStart = performance.now();
       console.log(`[Eager Load] Fetching both open and close for ${latestQuarter} in single call`);
-      fetchDrilldownBothActions(code, record.cusip, latestQuarter)
+      fetchDrilldownBothActions(code, cusipValue, latestQuarter)
         .then(({ rows, queryTimeMs }) => {
           const eagerWallMs = Math.round(performance.now() - eagerStart);
           console.log(`[Eager Load] Both actions loaded for ${latestQuarter}: wall=${eagerWallMs}ms, net=${queryTimeMs}ms, rows=${rows.length}`);
@@ -190,23 +192,26 @@ export function AssetDetailPage() {
   // Wait a bit to let the table fetch its data first, then load remaining quarters
   useEffect(() => {
     if (!selection || !code || !record?.cusip || backgroundLoadStartedRef.current || activityRows.length === 0) return;
+
+    const cusipValue = record.cusip;
+    if (!cusipValue) return;
     
     backgroundLoadStartedRef.current = true;
     
     // Delay background loading to let the table fetch its data first
     const timeoutId = setTimeout(() => {
       const bgStart = performance.now();
-      console.log(`[Background Load] Starting bulk fetch for ${code}/${record.cusip}`);
+      console.log(`[Background Load] Starting bulk fetch for ${code}/${cusipValue}`);
 
       backgroundLoadAllDrilldownData(
         code,
-        record.cusip,
+        cusipValue,
         [], // empty list triggers full bulk load (route capped to 5000 rows)
         (loaded, total) => {
           setBackgroundLoadProgress({ loaded, total });
           if (loaded === total) {
             const bgMs = Math.round(performance.now() - bgStart);
-            console.log(`[Background Load] Complete for ${code}/${record.cusip}: bulk fetch done in ${bgMs}ms`);
+            console.log(`[Background Load] Complete for ${code}/${cusipValue}: bulk fetch done in ${bgMs}ms`);
           }
         }
       ).catch(err => {
