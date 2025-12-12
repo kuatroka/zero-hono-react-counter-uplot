@@ -7,8 +7,12 @@ export {
     superinvestorsCollection,
     searchesCollection,
     preloadCollections,
+    preloadSearches,
 } from './instances'
 
 // Types
 export type { Asset, Superinvestor, SearchResult } from './instances'
 export { type InvestorDetail, investorDrilldownCollection } from './investor-details'
+
+// Search index functions
+export { loadPrecomputedIndex, searchWithIndex, isSearchIndexReady } from './searches'

@@ -1,16 +1,12 @@
 import { createCollection } from '@tanstack/db'
 import { queryCollectionOptions } from '@tanstack/query-db-collection'
 import { QueryClient } from '@tanstack/query-core'
-
-// Create a dedicated QueryClient for searches to avoid circular dependency
-const searchQueryClient = new QueryClient({
-    defaultOptions: {
-        queries: {
-            staleTime: Infinity, // Never auto-refetch
-            gcTime: Infinity,    // Never garbage collect
-        },
-    },
-})
+import { 
+    queryClient as sharedQueryClient, 
+    loadPersistedSearchIndex, 
+    persistSearchIndex,
+    type PersistedSearchIndex 
+} from './query-client'
 
 export interface SearchResult {
     id: number
@@ -80,17 +76,22 @@ async function fetchAllSearches(): Promise<SearchResult[]> {
     }
 }
 
-// Create the searches collection with TanStack Query backing
-// queryFn fetches all data which is then cached by TanStack Query
-export const searchesCollection = createCollection(
-    queryCollectionOptions<SearchResult>({
-        queryKey: ['searches'],
-        queryFn: fetchAllSearches,
-        queryClient: searchQueryClient,
-        getKey: (item) => item.id,
-        staleTime: Infinity, // Never auto-refetch
-    })
-)
+// Factory function to create searches collection with a given QueryClient
+// This allows using the shared queryClient with IndexedDB persistence
+export function createSearchesCollection(queryClient: QueryClient) {
+    return createCollection(
+        queryCollectionOptions<SearchResult>({
+            queryKey: ['searches'],
+            queryFn: fetchAllSearches,
+            queryClient,
+            getKey: (item) => item.id,
+            staleTime: Infinity, // Never auto-refetch
+        })
+    )
+}
+
+// Default export using shared queryClient (with IndexedDB persistence)
+export const searchesCollection = createSearchesCollection(sharedQueryClient)
 
 // Preload the searches collection - call this on app init
 export async function preloadSearches(): Promise<void> {
@@ -126,7 +127,7 @@ interface SearchIndex {
 let searchIndex: SearchIndex | null = null
 let indexLoadPromise: Promise<void> | null = null
 
-// Load pre-computed index from API (generated during data pipeline)
+// Load pre-computed index - tries IndexedDB first, then fetches from API
 export async function loadPrecomputedIndex(): Promise<void> {
     // Prevent multiple simultaneous loads
     if (indexLoadPromise) {
@@ -142,6 +143,15 @@ export async function loadPrecomputedIndex(): Promise<void> {
         const startTime = performance.now()
         
         try {
+            // Try to load from IndexedDB first
+            const persisted = await loadPersistedSearchIndex()
+            if (persisted && Object.keys(persisted.items).length > 0) {
+                searchIndex = persisted as SearchIndex
+                console.log(`[SearchIndex] Restored from IndexedDB in ${(performance.now() - startTime).toFixed(1)}ms (${persisted.metadata?.totalItems || 0} items)`)
+                return
+            }
+            
+            // Fetch from API if not in IndexedDB
             const fetchStart = performance.now()
             const response = await fetch('/api/duckdb-search/index')
             const fetchEnd = performance.now()
@@ -165,6 +175,9 @@ export async function loadPrecomputedIndex(): Promise<void> {
             }
             
             searchIndex = data
+            
+            // Persist to IndexedDB for next time
+            await persistSearchIndex(data as PersistedSearchIndex)
             
             const total = parseEnd - startTime
             const network = fetchEnd - fetchStart
