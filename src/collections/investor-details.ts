@@ -39,6 +39,25 @@ function getAllDrilldownRows(): InvestorDetail[] {
 // Track which [ticker, cusip, quarter, action] combinations have been fetched
 const fetchedCombinations = new Set<string>()
 
+// Track which [ticker, cusip] pairs have had a bulk background load completed
+const bulkFetchedPairs = new Set<string>()
+
+function makePairKey(ticker: string, cusip: string): string {
+    return `${ticker}-${cusip}`
+}
+
+function getRowsForPair(allRows: InvestorDetail[], ticker: string, cusip: string): InvestorDetail[] {
+    return allRows.filter((r) => r.ticker === ticker && r.cusip === cusip)
+}
+
+function inferBulkFetchedFromRows(allRows: InvestorDetail[], ticker: string, cusip: string): boolean {
+    const pairRows = getRowsForPair(allRows, ticker, cusip)
+    if (pairRows.length === 0) return false
+    const distinctQuarters = new Set(pairRows.map((r) => r.quarter))
+    // If we already have multiple quarters locally, assume bulk load ran before.
+    return distinctQuarters.size >= 2
+}
+
 /**
  * Check if data for a specific [ticker, cusip, quarter, action] has been fetched
  */
@@ -137,6 +156,29 @@ export async function fetchDrilldownBothActions(
     cusip: string,
     quarter: string,
 ): Promise<{ rows: InvestorDetail[], queryTimeMs: number }> {
+    const openKey = `${ticker}-${cusip}-${quarter}-open`
+    const closeKey = `${ticker}-${cusip}-${quarter}-close`
+
+    const allRows = getAllDrilldownRows()
+    const cachedRows = allRows.filter(
+        (item) =>
+            item.ticker === ticker &&
+            item.cusip === cusip &&
+            item.quarter === quarter &&
+            (item.action === 'open' || item.action === 'close')
+    )
+
+    const openCached = cachedRows.some((r) => r.action === 'open')
+    const closeCached = cachedRows.some((r) => r.action === 'close')
+    const openFetched = openCached || fetchedCombinations.has(openKey)
+    const closeFetched = closeCached || fetchedCombinations.has(closeKey)
+
+    if (openFetched && closeFetched) {
+        fetchedCombinations.add(openKey)
+        fetchedCombinations.add(closeKey)
+        return { rows: cachedRows, queryTimeMs: 0 }
+    }
+
     const startTime = performance.now()
 
     const searchParams = new URLSearchParams()
@@ -194,9 +236,19 @@ export async function backgroundLoadAllDrilldownData(
     quarters: string[],
     onProgress?: (loaded: number, total: number) => void
 ): Promise<void> {
+    const pairKey = makePairKey(ticker, cusip)
+
     // Seed fetched set with existing collection rows to avoid refetching on refresh
-    for (const row of getAllDrilldownRows()) {
+    const existingRows = getAllDrilldownRows()
+    for (const row of existingRows) {
         fetchedCombinations.add(`${row.ticker}-${row.cusip}-${row.quarter}-${row.action}`)
+    }
+
+    if (bulkFetchedPairs.has(pairKey) || inferBulkFetchedFromRows(existingRows, ticker, cusip)) {
+        bulkFetchedPairs.add(pairKey)
+        onProgress?.(1, 1)
+        console.debug(`[Background Load] ${ticker}/${cusip}: skipping bulk fetch (already cached locally)`)
+        return
     }
 
     // Bulk load everything in one call (fastest overall; route caps rows to keep payload reasonable)
@@ -246,6 +298,7 @@ export async function backgroundLoadAllDrilldownData(
         fetchedCombinations.add(`${r.ticker}-${r.cusip}-${r.quarter}-${r.action}`)
     }
 
+    bulkFetchedPairs.add(pairKey)
     onProgress?.(1, 1)
     const elapsedMs = Math.round(performance.now() - startMs)
     console.log(`[Background Load] ${ticker}/${cusip}: fetched ${rows.length} rows in one bulk call (wall=${elapsedMs}ms)`)
