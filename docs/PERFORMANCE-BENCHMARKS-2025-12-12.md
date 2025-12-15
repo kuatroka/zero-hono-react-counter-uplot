@@ -78,7 +78,7 @@ Comprehensive performance analysis of the current architecture to inform decisio
 
 **Test Configuration:**
 - Iterations: 10 per data size
-- Libraries: ECharts 5.5.0 vs uPlot 1.6.30
+- Libraries: ECharts 6.0.0 vs uPlot 1.6.32
 - Browser: Chromium (headless)
 - Animation: Disabled for accurate measurements
 
@@ -332,7 +332,7 @@ Your architecture is **production-ready and performant**. The conversation about
 
 **Software:**
 - Bun runtime
-- DuckDB 1.4.2
+- DuckDB 1.4.3 (@duckdb/node-api ^1.4.3-r.1)
 - Chromium (Playwright)
 - Node.js (for benchmarking scripts)
 

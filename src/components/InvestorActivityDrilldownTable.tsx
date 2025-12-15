@@ -196,11 +196,13 @@ export function InvestorActivityDrilldownTable({
     />
   );
 
+  const cardTitle = `Superinvestors who ${titleAction} positions in ${ticker} (${quarter})`;
+
   return (
     <Card>
       <CardHeader>
         <CardTitle className="flex items-center justify-between">
-          <span>Superinvestors who {titleAction} positions in {ticker} ({quarter})</span>
+          <span>{cardTitle}</span>
         </CardTitle>
         <CardDescription className="flex items-center justify-between">
           <span>{dataFlowLabel}</span>

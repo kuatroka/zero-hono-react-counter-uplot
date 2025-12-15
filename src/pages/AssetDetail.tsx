@@ -123,16 +123,32 @@ export function AssetDetailPage() {
   const flowRows = flowData ?? [];
 
   const [selection, setSelection] = useState<InvestorActivitySelection | null>(null);
+  const [hoverSelection, setHoverSelection] = useState<InvestorActivitySelection | null>(null);
   const scrollYRef = useRef<number | null>(null);
   const [backgroundLoadProgress, setBackgroundLoadProgress] = useState<{ loaded: number; total: number } | null>(null);
   const backgroundLoadStartedRef = useRef(false);
 
   const handleSelectionChange = useCallback((next: InvestorActivitySelection) => {
-    console.log(`[Bar Click] Changing selection to ${next.quarter} ${next.action}`);
     if (typeof window !== 'undefined') {
       scrollYRef.current = window.scrollY;
     }
     setSelection(next);
+  }, []);
+
+  const hoverTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  const handleHoverChange = useCallback((next: InvestorActivitySelection | null) => {
+    if (hoverTimeoutRef.current) {
+      clearTimeout(hoverTimeoutRef.current);
+    }
+
+    if (next) {
+      hoverTimeoutRef.current = setTimeout(() => {
+        setHoverSelection(next);
+      }, 150);
+    } else {
+      setHoverSelection(null);
+    }
   }, []);
 
   useEffect(() => {
@@ -151,8 +167,18 @@ export function AssetDetailPage() {
   // Reset selection and background load flag when ticker changes
   useEffect(() => {
     setSelection(null);
+    setHoverSelection(null);
     backgroundLoadStartedRef.current = false;
   }, [code]);
+
+  // Cleanup hover timeout on unmount
+  useEffect(() => {
+    return () => {
+      if (hoverTimeoutRef.current) {
+        clearTimeout(hoverTimeoutRef.current);
+      }
+    };
+  }, []);
 
   // Set initial selection to latest quarter immediately when activity data loads.
   // Try 'open' first, fall back to 'close' if no open data exists.
@@ -300,6 +326,8 @@ export function AssetDetailPage() {
                 data={activityRows}
                 ticker={record.asset}
                 onBarClick={({ quarter, action }) => handleSelectionChange({ quarter, action })}
+                onBarHover={({ quarter, action }) => handleHoverChange({ quarter, action })}
+                onBarLeave={() => handleHoverChange(null)}
                 latencyBadge={
                   <div className="flex items-center gap-2">
                     <span className="text-[10px] text-muted-foreground">data</span>
@@ -311,6 +339,8 @@ export function AssetDetailPage() {
                 data={activityRows}
                 ticker={record.asset}
                 onBarClick={({ quarter, action }) => handleSelectionChange({ quarter, action })}
+                onBarHover={({ quarter, action }) => handleHoverChange({ quarter, action })}
+                onBarLeave={() => handleHoverChange(null)}
                 latencyBadge={
                   <div className="flex items-center gap-2">
                     <span className="text-[10px] text-muted-foreground">data</span>
@@ -352,21 +382,65 @@ export function AssetDetailPage() {
                 </div>
               )}
               
-              {selection && record.cusip ? (
-                <InvestorActivityDrilldownTable
-                  key={`${record.asset}-${record.cusip}-${selection.quarter}-${selection.action}`}
-                  ticker={record.asset}
-                  cusip={record.cusip}
-                  quarter={selection.quarter}
-                  action={selection.action}
-                />
-              ) : selection ? (
+              {/* Two tables side by side: Click-based (left) and Hover-based (right) */}
+              {(selection || hoverSelection) && record.cusip ? (
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                  {/* Click-based table */}
+                  <div>
+                    <div className="mb-2 flex items-center gap-2">
+                      <span className="text-sm font-medium text-muted-foreground">
+                        Click Interaction
+                      </span>
+                      {selection && (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 text-xs font-medium bg-primary/10 text-primary rounded-full">
+                          <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                          </svg>
+                          Locked
+                        </span>
+                      )}
+                    </div>
+                    {selection ? (
+                      <InvestorActivityDrilldownTable
+                        key={`click-${record.asset}-${record.cusip}-${selection.quarter}-${selection.action}`}
+                        ticker={record.asset}
+                        cusip={record.cusip}
+                        quarter={selection.quarter}
+                        action={selection.action}
+                      />
+                    ) : (
+                      <div className="py-8 text-center text-muted-foreground border rounded-lg bg-card">
+                        Click a bar in the chart to see details
+                      </div>
+                    )}
+                  </div>
+                  
+                  {/* Hover-based table */}
+                  <div>
+                    <div className="mb-2 text-sm font-medium text-muted-foreground">
+                      Hover Interaction
+                    </div>
+                    {hoverSelection ? (
+                      <InvestorActivityDrilldownTable
+                        ticker={record.asset}
+                        cusip={record.cusip}
+                        quarter={hoverSelection.quarter}
+                        action={hoverSelection.action}
+                      />
+                    ) : (
+                      <div className="py-8 text-center text-muted-foreground border rounded-lg bg-card">
+                        Hover over a bar in the chart to see details
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ) : (selection || hoverSelection) ? (
                 <div className="py-8 text-center text-muted-foreground">
                   No CUSIP available for this asset.
                 </div>
               ) : (
                 <div className="py-8 text-center text-muted-foreground">
-                  Select a bar in the chart to see which superinvestors opened or closed positions.
+                  Click or hover over a bar in the chart to see which superinvestors opened or closed positions.
                 </div>
               )}
             </div>

@@ -61,6 +61,10 @@ interface OpenedClosedBarChartProps {
   description?: string;
   /** Callback when a bar is clicked */
   onBarClick?: (selection: { quarter: string; action: "open" | "close" }) => void;
+  /** Callback when a bar is hovered */
+  onBarHover?: (selection: { quarter: string; action: "open" | "close" }) => void;
+  /** Callback when mouse leaves a bar */
+  onBarLeave?: () => void;
   /** Unit label for tooltip (default: "positions") */
   unitLabel?: string;
   /** Optional latency badge */
@@ -81,11 +85,12 @@ export function OpenedClosedBarChart({
   title,
   description,
   onBarClick,
+  onBarHover,
+  onBarLeave,
   unitLabel = "positions",
   latencyBadge,
 }: OpenedClosedBarChartProps) {
   const chartRef = useRef<any>(null);
-  const rafRef = useRef<number | null>(null);
 
   const chartData = useMemo(() => {
     return data.map((item) => ({
@@ -214,31 +219,45 @@ export function OpenedClosedBarChart({
     if (!chartInstance) return;
 
     const clickHandler = (params: any) => {
-      console.log(`[ECharts Click] params=`, params);
-      if (!onBarClick || !params.name || !params.seriesName) {
-        console.log(`[ECharts Click] Skipped - onBarClick=${!!onBarClick}, name=${params.name}, seriesName=${params.seriesName}`);
-        return;
-      }
+      if (!onBarClick || !params.name || !params.seriesName) return;
 
       const quarter = params.name as string;
       const action = params.seriesName === "Opened" ? "open" : "close";
 
-      console.log(`[ECharts Click] Calling onBarClick with quarter=${quarter}, action=${action}`);
       onBarClick({ quarter, action });
     };
 
+    const hoverHandler = (params: any) => {
+      if (!onBarHover || !params.name || !params.seriesName) return;
+
+      const quarter = params.name as string;
+      const action = params.seriesName === "Opened" ? "open" : "close";
+
+      onBarHover({ quarter, action });
+    };
+
+    const mouseOutHandler = () => {
+      if (onBarLeave) {
+        onBarLeave();
+      }
+    };
+
     chartInstance.on('click', clickHandler);
+    chartInstance.on('mouseover', hoverHandler);
+    chartInstance.on('globalout', mouseOutHandler);
 
     return () => {
       try {
-        if (!chartInstance.isDisposed || !chartInstance.isDisposed()) {
+        if (chartInstance && !chartInstance.isDisposed()) {
           chartInstance.off('click', clickHandler);
+          chartInstance.off('mouseover', hoverHandler);
+          chartInstance.off('globalout', mouseOutHandler);
         }
       } catch {
         // ignore
       }
     };
-  }, [onBarClick, option]);
+  }, [onBarClick, onBarHover, onBarLeave, option]);
 
   if (data.length === 0) {
     return (

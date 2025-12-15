@@ -8,6 +8,8 @@ interface InvestorActivityEchartsChartProps {
   data: readonly CusipQuarterInvestorActivity[];
   ticker: string;
   onBarClick?: (selection: { quarter: string; action: "open" | "close" }) => void;
+  onBarHover?: (selection: { quarter: string; action: "open" | "close" }) => void;
+  onBarLeave?: () => void;
   latencyBadge?: React.ReactNode;
 }
 
@@ -19,6 +21,8 @@ export function InvestorActivityEchartsChart({
   data, 
   ticker, 
   onBarClick,
+  onBarHover,
+  onBarLeave,
   latencyBadge,
 }: InvestorActivityEchartsChartProps) {
   // Transform CusipQuarterInvestorActivity to QuarterlyActivityPoint
@@ -34,8 +38,10 @@ export function InvestorActivityEchartsChart({
     <OpenedClosedBarChart
       data={chartData}
       title={`Investor Activity for ${ticker} (ECharts)`}
-      description="Click bars to see which superinvestors opened (green) or closed (red) positions"
+      description="Click or hover over bars to see which superinvestors opened (green) or closed (red) positions"
       onBarClick={onBarClick}
+      onBarHover={onBarHover}
+      onBarLeave={onBarLeave}
       latencyBadge={latencyBadge}
       unitLabel="investors"
     />

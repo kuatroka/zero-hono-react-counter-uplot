@@ -15,6 +15,8 @@ interface InvestorActivityUplotChartProps {
   data: readonly CusipQuarterInvestorActivity[];
   ticker: string;
   onBarClick?: (payload: { quarter: string; action: "open" | "close" }) => void;
+  onBarHover?: (payload: { quarter: string; action: "open" | "close" }) => void;
+  onBarLeave?: () => void;
   latencyBadge?: React.ReactNode;
 }
 
@@ -22,10 +24,13 @@ export function InvestorActivityUplotChart({
   data,
   ticker,
   onBarClick,
+  onBarHover,
+  onBarLeave,
   latencyBadge,
 }: InvestorActivityUplotChartProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<uPlot | null>(null);
+  const lastHoverRef = useRef<{ quarter: string; action: "open" | "close" } | null>(null);
 
   useEffect(() => {
     if (!containerRef.current || data.length === 0) return;
@@ -84,6 +89,46 @@ export function InvestorActivityUplotChart({
           drag: { x: false, y: false },
           focus: { prox: 32 },
         },
+        hooks: {
+          setCursor: [
+            (u) => {
+              if (!onBarHover || !onBarLeave) return;
+              
+              const idx = u.cursor.idx;
+              if (idx == null || idx < 0 || idx >= labels.length) {
+                if (lastHoverRef.current !== null) {
+                  lastHoverRef.current = null;
+                  onBarLeave();
+                }
+                return;
+              }
+
+              const quarter = labels[idx];
+              const openedVal = opened[idx] ?? 0;
+              const closedVal = closed[idx] ?? 0;
+
+              let action: "open" | "close";
+              
+              const cursorY = u.cursor.top ?? 0;
+              const anyChart = u as any;
+              const zeroY = anyChart.valToPos(0, "y", true) as number;
+
+              if (openedVal > 0 && closedVal === 0) {
+                action = "open";
+              } else if (closedVal < 0 && openedVal === 0) {
+                action = "close";
+              } else {
+                action = cursorY < zeroY ? "open" : "close";
+              }
+
+              const current = lastHoverRef.current;
+              if (!current || current.quarter !== quarter || current.action !== action) {
+                lastHoverRef.current = { quarter, action };
+                onBarHover({ quarter, action });
+              }
+            },
+          ],
+        },
       },
       [indices, opened, closed],
       containerRef.current
@@ -126,9 +171,6 @@ export function InvestorActivityUplotChart({
         action = y < zeroY ? "open" : "close";
       }
 
-      console.log(
-        `[uPlot Click] quarter=${quarter}, action=${action}, idx=${idx}, y=${y}, zeroY=${zeroY}, openedVal=${openedVal}, closedVal=${closedVal}`,
-      );
       onBarClick({ quarter, action });
     };
 
@@ -149,7 +191,7 @@ export function InvestorActivityUplotChart({
       chartRef.current?.destroy();
       chartRef.current = null;
     };
-  }, [data, ticker, onBarClick]);
+  }, [data, ticker, onBarClick, onBarHover, onBarLeave]);
 
   if (data.length === 0) {
     return (

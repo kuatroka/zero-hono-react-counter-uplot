@@ -21,7 +21,10 @@ export default defineConfig({
     },
   },
   plugins: [
-    tsConfigPaths(),
+    tsConfigPaths({
+      projects: ["./tsconfig.app.json"],
+      ignoreConfigErrors: true,
+    }),
     viteReact(),
   ],
 });
