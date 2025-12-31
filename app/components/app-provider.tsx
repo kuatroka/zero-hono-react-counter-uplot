@@ -1,12 +1,13 @@
 import { useEffect, useRef } from "react";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { queryClient, preloadCollections, initializeWithFreshnessCheck, checkFreshnessOnFocus } from "@/collections";
+import { openDatabase } from "@/lib/dexie-db";
 
 // Re-export for backward compatibility
 export { queryClient };
 
 // Preload collections on app init for instant queries
-// First checks data freshness and invalidates stale caches
+// First opens Dexie database, checks data freshness, then preloads
 function CollectionPreloader() {
     const hasInitialized = useRef(false);
 
@@ -18,9 +19,13 @@ function CollectionPreloader() {
         hasInitialized.current = true;
 
         async function init() {
-            // Check if backend data is fresher than cache, invalidate if stale
+            // 1. Open Dexie database
+            await openDatabase();
+
+            // 2. Check if backend data is fresher than cache, invalidate if stale
             await initializeWithFreshnessCheck();
-            // Then preload all eager collections
+
+            // 3. Then preload all eager collections
             await preloadCollections();
         }
         void init();

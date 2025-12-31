@@ -2,12 +2,19 @@
  * Data Freshness - Cache Invalidation System
  *
  * Detects when backend DuckDB data is fresher than frontend caches
- * and invalidates all IndexedDB databases when stale.
+ * and invalidates the Dexie database when stale.
  *
- * Uses localStorage for version tracking (survives IndexedDB nuke).
+ * Uses localStorage for version tracking (survives Dexie database delete).
+ *
+ * Key improvement over idb-keyval:
+ * - Dexie properly manages connection lifecycle
+ * - db.close() → db.delete() → db.open() works without page reload
+ * - No stale connection issues
  */
 
+import { invalidateDatabase } from '@/lib/dexie-db'
 import { clearAllCikQuarterlyData } from './cik-quarterly'
+import { queryClient } from './query-client'
 
 const STORAGE_KEY = 'app-data-version'
 
@@ -48,48 +55,28 @@ export function setStoredDataVersion(lastDataLoadDate: string): void {
 }
 
 /**
- * Clear all IndexedDB databases (global nuke)
- * Uses indexedDB.databases() API to enumerate and delete all databases
- */
-export async function clearAllIndexedDB(): Promise<void> {
-    if (typeof indexedDB === 'undefined') return
-
-    try {
-        const databases = await indexedDB.databases()
-        await Promise.all(
-            databases.map(db => new Promise<void>((resolve, reject) => {
-                if (!db.name) {
-                    resolve()
-                    return
-                }
-                const req = indexedDB.deleteDatabase(db.name)
-                req.onsuccess = () => {
-                    console.log(`[DataFreshness] Deleted IndexedDB: ${db.name}`)
-                    resolve()
-                }
-                req.onerror = () => reject(req.error)
-                req.onblocked = () => {
-                    console.warn(`[DataFreshness] IndexedDB delete blocked: ${db.name}`)
-                    resolve()
-                }
-            }))
-        )
-    } catch (error) {
-        console.error('[DataFreshness] Failed to clear IndexedDB:', error)
-    }
-}
-
-/**
- * Invalidate all caches - both IndexedDB and memory
+ * Invalidate all caches - Dexie database, memory caches, and TanStack Query
+ *
+ * Uses Dexie's proper connection lifecycle:
+ * 1. Close the database connection
+ * 2. Delete the database
+ * 3. Reopen with fresh connection
+ *
+ * No page reload required!
  */
 export async function invalidateAllCaches(): Promise<void> {
     console.log('[DataFreshness] Invalidating all caches...')
 
-    // Clear all IndexedDB databases
-    await clearAllIndexedDB()
+    // 1. Clear TanStack Query cache (in-memory)
+    queryClient.clear()
+    console.log('[DataFreshness] TanStack Query cache cleared')
 
-    // Clear in-memory caches
+    // 2. Clear CIK quarterly memory cache
     clearAllCikQuarterlyData()
+    console.log('[DataFreshness] Memory caches cleared')
+
+    // 3. Invalidate Dexie database (close → delete → reopen)
+    await invalidateDatabase()
 
     console.log('[DataFreshness] All caches invalidated')
 }
@@ -125,19 +112,21 @@ export async function checkDataFreshness(): Promise<FreshnessCheckResult> {
 }
 
 // Guard to prevent double initialization (React StrictMode runs effects twice)
-let initializationPromise: Promise<void> | null = null
+let initializationPromise: Promise<boolean> | null = null
 let isInitialized = false
 
 /**
  * Initialize app with freshness check
  * Call this before preloading collections
  * Guarded against double execution from React StrictMode
+ *
+ * Returns true if caches were invalidated (caller should trigger preload)
  */
-export async function initializeWithFreshnessCheck(): Promise<void> {
+export async function initializeWithFreshnessCheck(): Promise<boolean> {
     // If already initialized, skip
     if (isInitialized) {
         console.log('[DataFreshness] Already initialized, skipping')
-        return
+        return false
     }
 
     // If initialization is in progress, wait for it
@@ -152,14 +141,10 @@ export async function initializeWithFreshnessCheck(): Promise<void> {
         if (isStale && serverVersion) {
             console.log(`[DataFreshness] Data updated: ${localVersion} → ${serverVersion}, invalidating caches...`)
             await invalidateAllCaches()
-            // Update version BEFORE reload so we don't loop
             setStoredDataVersion(serverVersion)
-            // Reload to get fresh module-level store references
-            // idb-keyval stores are created at module init and become stale after IndexedDB nuke
-            console.log('[DataFreshness] Reloading page for fresh store connections...')
-            window.location.reload()
-            // Never reaches here due to reload
-            return
+            isInitialized = true
+            // Return true to indicate caches were invalidated - caller will preload
+            return true
         } else if (serverVersion && localVersion === null) {
             // First load - just store the version
             console.log(`[DataFreshness] First load, storing version: ${serverVersion}`)
@@ -169,6 +154,7 @@ export async function initializeWithFreshnessCheck(): Promise<void> {
         }
 
         isInitialized = true
+        return false
     })()
 
     return initializationPromise
@@ -180,7 +166,7 @@ const FOCUS_CHECK_DEBOUNCE_MS = 5000
 
 /**
  * Check freshness on tab focus (debounced)
- * Returns true if caches were invalidated
+ * Returns true if caches were invalidated (caller should trigger preload)
  */
 export async function checkFreshnessOnFocus(): Promise<boolean> {
     const now = Date.now()
@@ -194,14 +180,15 @@ export async function checkFreshnessOnFocus(): Promise<boolean> {
     if (isStale && serverVersion) {
         console.log(`[DataFreshness] Tab focus: data updated, invalidating caches...`)
         await invalidateAllCaches()
-        // Update version BEFORE reload so we don't loop
         setStoredDataVersion(serverVersion)
-        // Reload to get fresh module-level store references
-        console.log('[DataFreshness] Reloading page for fresh store connections...')
-        window.location.reload()
-        // Never reaches here due to reload
+        // Return true - caller will trigger preload
         return true
     }
 
     return false
+}
+
+// Legacy export for backward compatibility (now uses Dexie internally)
+export async function clearAllIndexedDB(): Promise<void> {
+    await invalidateDatabase()
 }

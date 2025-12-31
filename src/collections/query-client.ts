@@ -1,48 +1,31 @@
 /**
- * Shared QueryClient with IndexedDB Persistence
- * 
+ * Shared QueryClient with Dexie IndexedDB Persistence
+ *
  * This file creates the shared QueryClient instance with IndexedDB persistence
- * that can be imported by all collection files without circular dependencies.
+ * using Dexie for proper connection lifecycle management.
+ *
+ * Dexie provides:
+ * - Proper connection lifecycle (close/delete/reopen without page reload)
+ * - Single database with multiple tables
+ * - Better error handling
  */
 
-import { QueryClient } from '@tanstack/query-core';
-import { experimental_createQueryPersister, type AsyncStorage } from '@tanstack/query-persist-client-core';
-import { get, set, del, createStore } from 'idb-keyval';
+import { QueryClient } from '@tanstack/query-core'
+import { experimental_createQueryPersister } from '@tanstack/query-persist-client-core'
+import { createDexieStorage } from '@/lib/dexie-persister'
+import { getDb, type SearchIndexEntry, type CikQuarterlyEntry, type DrilldownEntry } from '@/lib/dexie-db'
 
-// Create IndexedDB store for query persistence
-const idbStore = typeof window !== 'undefined' 
-    ? createStore('tanstack-query-cache', 'queries')
-    : null;
-
-// Create AsyncStorage adapter for idb-keyval
-function createIdbStorage(): AsyncStorage {
-    return {
-        getItem: async (key) => {
-            if (!idbStore) return null;
-            return await get(key, idbStore) ?? null;
-        },
-        setItem: async (key, value) => {
-            if (!idbStore) return;
-            await set(key, value, idbStore);
-        },
-        removeItem: async (key) => {
-            if (!idbStore) return;
-            await del(key, idbStore);
-        },
-    };
-}
-
-// Create the persister for IndexedDB
+// Create the persister using Dexie storage
 // Each query is persisted separately (not the whole client)
 // Queries are lazily restored when first used
 export const persister = typeof window !== 'undefined'
     ? experimental_createQueryPersister({
-        storage: createIdbStorage(),
+        storage: createDexieStorage(),
         maxAge: 1000 * 60 * 60 * 24 * 7, // 7 days
     })
-    : null;
+    : null
 
-// Shared QueryClient instance with IndexedDB persistence
+// Shared QueryClient instance with Dexie persistence
 export const queryClient = new QueryClient({
     defaultOptions: {
         queries: {
@@ -51,88 +34,96 @@ export const queryClient = new QueryClient({
             persister: persister?.persisterFn,
         },
     },
-});
+})
 
 // ============================================================
-// SEARCH INDEX PERSISTENCE (separate from query cache)
+// SEARCH INDEX PERSISTENCE (using Dexie searchIndex table)
 // ============================================================
 
-// Create a separate IndexedDB store for the search index
-// This is stored separately because it's a large pre-computed structure
-const searchIndexStore = typeof window !== 'undefined'
-    ? createStore('search-index-cache', 'index')
-    : null;
-
-const SEARCH_INDEX_KEY = 'search-index-v1';
+const SEARCH_INDEX_KEY = 'search-index-v1'
 
 export interface PersistedSearchIndex {
-    codeExact: Record<string, number[]>;
-    codePrefixes: Record<string, number[]>;
-    namePrefixes: Record<string, number[]>;
-    items: Record<string, { id: number; cusip: string | null; code: string; name: string | null; category: string }>;
+    codeExact: Record<string, number[]>
+    codePrefixes: Record<string, number[]>
+    namePrefixes: Record<string, number[]>
+    items: Record<string, { id: number; cusip: string | null; code: string; name: string | null; category: string }>
     metadata?: {
-        totalItems: number;
-        generatedAt?: string;
-        persistedAt?: number;
-    };
-}
-
-/**
- * Save search index to IndexedDB
- */
-export async function persistSearchIndex(index: PersistedSearchIndex): Promise<void> {
-    if (!searchIndexStore) return;
-    
-    try {
-        const startTime = performance.now();
-        // Add persistence timestamp
-        const indexWithTimestamp = {
-            ...index,
-            metadata: {
-                ...index.metadata,
-                persistedAt: Date.now(),
-            },
-        };
-        await set(SEARCH_INDEX_KEY, indexWithTimestamp, searchIndexStore);
-        console.log(`[SearchIndex] Persisted to IndexedDB in ${(performance.now() - startTime).toFixed(1)}ms`);
-    } catch (error) {
-        console.error('[SearchIndex] Failed to persist:', error);
+        totalItems: number
+        generatedAt?: string
+        persistedAt?: number
     }
 }
 
 /**
- * Load search index from IndexedDB
+ * Save search index to IndexedDB via Dexie
+ */
+export async function persistSearchIndex(index: PersistedSearchIndex): Promise<void> {
+    if (typeof window === 'undefined') return
+
+    try {
+        const startTime = performance.now()
+        const db = getDb()
+        const entry: SearchIndexEntry = {
+            key: SEARCH_INDEX_KEY,
+            codeExact: index.codeExact,
+            codePrefixes: index.codePrefixes,
+            namePrefixes: index.namePrefixes,
+            items: index.items,
+            metadata: {
+                totalItems: index.metadata?.totalItems ?? 0,
+                generatedAt: index.metadata?.generatedAt,
+                persistedAt: Date.now(),
+            },
+        }
+        await db.searchIndex.put(entry)
+        console.log(`[SearchIndex] Persisted to IndexedDB in ${(performance.now() - startTime).toFixed(1)}ms`)
+    } catch (error) {
+        console.error('[SearchIndex] Failed to persist:', error)
+    }
+}
+
+/**
+ * Load search index from IndexedDB via Dexie
  * Returns null if not found or expired (older than 7 days)
  */
 export async function loadPersistedSearchIndex(): Promise<PersistedSearchIndex | null> {
-    if (!searchIndexStore) return null;
-    
+    if (typeof window === 'undefined') return null
+
     try {
-        const startTime = performance.now();
-        const index = await get<PersistedSearchIndex>(SEARCH_INDEX_KEY, searchIndexStore);
-        
-        if (!index) {
-            console.log('[SearchIndex] No persisted index found');
-            return null;
+        const startTime = performance.now()
+        const db = getDb()
+        const entry = await db.searchIndex.get(SEARCH_INDEX_KEY)
+
+        if (!entry) {
+            console.log('[SearchIndex] No persisted index found')
+            return null
         }
-        
+
         // Check if expired (7 days)
-        const persistedAt = index.metadata?.persistedAt;
+        const persistedAt = entry.metadata?.persistedAt
         if (persistedAt) {
-            const age = Date.now() - persistedAt;
-            const maxAge = 1000 * 60 * 60 * 24 * 7; // 7 days
+            const age = Date.now() - persistedAt
+            const maxAge = 1000 * 60 * 60 * 24 * 7 // 7 days
             if (age > maxAge) {
-                console.log('[SearchIndex] Persisted index expired, will refetch');
-                await del(SEARCH_INDEX_KEY, searchIndexStore);
-                return null;
+                console.log('[SearchIndex] Persisted index expired, will refetch')
+                await db.searchIndex.delete(SEARCH_INDEX_KEY)
+                return null
             }
         }
-        
-        console.log(`[SearchIndex] Loaded from IndexedDB in ${(performance.now() - startTime).toFixed(1)}ms (${index.metadata?.totalItems || 0} items)`);
-        return index;
+
+        const index: PersistedSearchIndex = {
+            codeExact: entry.codeExact,
+            codePrefixes: entry.codePrefixes,
+            namePrefixes: entry.namePrefixes,
+            items: entry.items,
+            metadata: entry.metadata,
+        }
+
+        console.log(`[SearchIndex] Loaded from IndexedDB in ${(performance.now() - startTime).toFixed(1)}ms (${entry.metadata?.totalItems || 0} items)`)
+        return index
     } catch (error) {
-        console.error('[SearchIndex] Failed to load from IndexedDB:', error);
-        return null;
+        console.error('[SearchIndex] Failed to load from IndexedDB:', error)
+        return null
     }
 }
 
@@ -140,107 +131,214 @@ export async function loadPersistedSearchIndex(): Promise<PersistedSearchIndex |
  * Clear persisted search index
  */
 export async function clearPersistedSearchIndex(): Promise<void> {
-    if (!searchIndexStore) return;
-    
+    if (typeof window === 'undefined') return
+
     try {
-        await del(SEARCH_INDEX_KEY, searchIndexStore);
-        console.log('[SearchIndex] Cleared from IndexedDB');
+        const db = getDb()
+        await db.searchIndex.delete(SEARCH_INDEX_KEY)
+        console.log('[SearchIndex] Cleared from IndexedDB')
     } catch (error) {
-        console.error('[SearchIndex] Failed to clear:', error);
+        console.error('[SearchIndex] Failed to clear:', error)
     }
 }
 
 // ============================================================
-// DRILLDOWN DATA PERSISTENCE (separate from query cache)
+// CIK QUARTERLY DATA PERSISTENCE (using Dexie cikQuarterly table)
 // ============================================================
 
-// Create a separate IndexedDB store for drilldown data
-// This stores the investor drilldown collection data for persistence across page refreshes
-const drilldownStore = typeof window !== 'undefined'
-    ? createStore('drilldown-cache', 'data')
-    : null;
-
-const DRILLDOWN_KEY = 'investor-drilldown-v1';
-
-export interface PersistedDrilldownData {
+export interface PersistedCikQuarterlyData {
+    cik: string
     rows: Array<{
-        id: string;
-        ticker: string;
-        cik: string;
-        cikName: string;
-        cikTicker: string;
-        quarter: string;
-        cusip: string | null;
-        action: 'open' | 'close';
-        didOpen: boolean | null;
-        didAdd: boolean | null;
-        didReduce: boolean | null;
-        didClose: boolean | null;
-        didHold: boolean | null;
-    }>;
-    fetchedCombinations: string[];
-    bulkFetchedPairs: string[];
+        id: string
+        cik: string
+        quarter: string
+        quarterEndDate: string
+        totalValue: number
+        totalValuePrcChg: number | null
+        numAssets: number
+    }>
     metadata?: {
-        totalRows: number;
-        persistedAt?: number;
-    };
+        persistedAt?: number
+    }
 }
 
 /**
- * Save drilldown data to IndexedDB
+ * Save CIK quarterly data to IndexedDB via Dexie
+ */
+export async function persistCikQuarterlyData(cik: string, rows: PersistedCikQuarterlyData['rows']): Promise<void> {
+    if (typeof window === 'undefined') return
+
+    try {
+        const startTime = performance.now()
+        const db = getDb()
+        const entry: CikQuarterlyEntry = {
+            cik,
+            rows,
+            persistedAt: Date.now(),
+        }
+        await db.cikQuarterly.put(entry)
+        console.log(`[CikQuarterly] Persisted ${rows.length} quarters for CIK ${cik} to IndexedDB in ${(performance.now() - startTime).toFixed(1)}ms`)
+    } catch (error) {
+        console.error('[CikQuarterly] Failed to persist:', error)
+    }
+}
+
+/**
+ * Load CIK quarterly data from IndexedDB via Dexie
+ * Returns null if not found or expired (older than 7 days)
+ */
+export async function loadPersistedCikQuarterlyData(cik: string): Promise<PersistedCikQuarterlyData | null> {
+    if (typeof window === 'undefined') return null
+
+    try {
+        const startTime = performance.now()
+        const db = getDb()
+        const entry = await db.cikQuarterly.get(cik)
+
+        if (!entry) {
+            return null
+        }
+
+        // Check if expired (7 days)
+        const persistedAt = entry.persistedAt
+        if (persistedAt) {
+            const age = Date.now() - persistedAt
+            const maxAge = 1000 * 60 * 60 * 24 * 7 // 7 days
+            if (age > maxAge) {
+                console.log(`[CikQuarterly] Persisted data for CIK ${cik} expired, will refetch`)
+                await db.cikQuarterly.delete(cik)
+                return null
+            }
+        }
+
+        const data: PersistedCikQuarterlyData = {
+            cik: entry.cik,
+            rows: entry.rows,
+            metadata: {
+                persistedAt: entry.persistedAt,
+            },
+        }
+
+        console.log(`[CikQuarterly] Loaded ${entry.rows.length} quarters for CIK ${cik} from IndexedDB in ${(performance.now() - startTime).toFixed(1)}ms`)
+        return data
+    } catch (error) {
+        console.error('[CikQuarterly] Failed to load from IndexedDB:', error)
+        return null
+    }
+}
+
+/**
+ * Clear persisted CIK quarterly data for a specific CIK
+ */
+export async function clearPersistedCikQuarterlyData(cik: string): Promise<void> {
+    if (typeof window === 'undefined') return
+
+    try {
+        const db = getDb()
+        await db.cikQuarterly.delete(cik)
+        console.log(`[CikQuarterly] Cleared data for CIK ${cik} from IndexedDB`)
+    } catch (error) {
+        console.error('[CikQuarterly] Failed to clear:', error)
+    }
+}
+
+// ============================================================
+// DRILLDOWN DATA PERSISTENCE (using Dexie drilldown table)
+// ============================================================
+
+const DRILLDOWN_KEY = 'investor-drilldown-v1'
+
+export interface PersistedDrilldownData {
+    rows: Array<{
+        id: string
+        ticker: string
+        cik: string
+        cikName: string
+        cikTicker: string
+        quarter: string
+        cusip: string | null
+        action: 'open' | 'close'
+        didOpen: boolean | null
+        didAdd: boolean | null
+        didReduce: boolean | null
+        didClose: boolean | null
+        didHold: boolean | null
+    }>
+    fetchedCombinations: string[]
+    bulkFetchedPairs: string[]
+    metadata?: {
+        totalRows: number
+        persistedAt?: number
+    }
+}
+
+/**
+ * Save drilldown data to IndexedDB via Dexie
  */
 export async function persistDrilldownData(data: PersistedDrilldownData): Promise<void> {
-    if (!drilldownStore) return;
-    
+    if (typeof window === 'undefined') return
+
     try {
-        const startTime = performance.now();
-        const dataWithTimestamp = {
-            ...data,
+        const startTime = performance.now()
+        const db = getDb()
+        const entry: DrilldownEntry = {
+            key: DRILLDOWN_KEY,
+            rows: data.rows,
+            fetchedCombinations: data.fetchedCombinations,
+            bulkFetchedPairs: data.bulkFetchedPairs,
             metadata: {
                 totalRows: data.rows.length,
                 persistedAt: Date.now(),
             },
-        };
-        await set(DRILLDOWN_KEY, dataWithTimestamp, drilldownStore);
-        console.log(`[Drilldown] Persisted ${data.rows.length} rows to IndexedDB in ${(performance.now() - startTime).toFixed(1)}ms`);
+        }
+        await db.drilldown.put(entry)
+        console.log(`[Drilldown] Persisted ${data.rows.length} rows to IndexedDB in ${(performance.now() - startTime).toFixed(1)}ms`)
     } catch (error) {
-        console.error('[Drilldown] Failed to persist:', error);
+        console.error('[Drilldown] Failed to persist:', error)
     }
 }
 
 /**
- * Load drilldown data from IndexedDB
+ * Load drilldown data from IndexedDB via Dexie
  * Returns null if not found or expired (older than 1 day)
  */
 export async function loadPersistedDrilldownData(): Promise<PersistedDrilldownData | null> {
-    if (!drilldownStore) return null;
-    
+    if (typeof window === 'undefined') return null
+
     try {
-        const startTime = performance.now();
-        const data = await get<PersistedDrilldownData>(DRILLDOWN_KEY, drilldownStore);
-        
-        if (!data) {
-            console.log('[Drilldown] No persisted data found');
-            return null;
+        const startTime = performance.now()
+        const db = getDb()
+        const entry = await db.drilldown.get(DRILLDOWN_KEY)
+
+        if (!entry) {
+            console.log('[Drilldown] No persisted data found')
+            return null
         }
-        
+
         // Check if expired (1 day for drilldown data - it changes more frequently)
-        const persistedAt = data.metadata?.persistedAt;
+        const persistedAt = entry.metadata?.persistedAt
         if (persistedAt) {
-            const age = Date.now() - persistedAt;
-            const maxAge = 1000 * 60 * 60 * 24; // 1 day
+            const age = Date.now() - persistedAt
+            const maxAge = 1000 * 60 * 60 * 24 // 1 day
             if (age > maxAge) {
-                console.log('[Drilldown] Persisted data expired, will refetch');
-                await del(DRILLDOWN_KEY, drilldownStore);
-                return null;
+                console.log('[Drilldown] Persisted data expired, will refetch')
+                await db.drilldown.delete(DRILLDOWN_KEY)
+                return null
             }
         }
-        
-        console.log(`[Drilldown] Loaded ${data.rows.length} rows from IndexedDB in ${(performance.now() - startTime).toFixed(1)}ms`);
-        return data;
+
+        const data: PersistedDrilldownData = {
+            rows: entry.rows,
+            fetchedCombinations: entry.fetchedCombinations,
+            bulkFetchedPairs: entry.bulkFetchedPairs,
+            metadata: entry.metadata,
+        }
+
+        console.log(`[Drilldown] Loaded ${entry.rows.length} rows from IndexedDB in ${(performance.now() - startTime).toFixed(1)}ms`)
+        return data
     } catch (error) {
-        console.error('[Drilldown] Failed to load from IndexedDB:', error);
-        return null;
+        console.error('[Drilldown] Failed to load from IndexedDB:', error)
+        return null
     }
 }
 
@@ -248,12 +346,13 @@ export async function loadPersistedDrilldownData(): Promise<PersistedDrilldownDa
  * Clear persisted drilldown data
  */
 export async function clearPersistedDrilldownData(): Promise<void> {
-    if (!drilldownStore) return;
-    
+    if (typeof window === 'undefined') return
+
     try {
-        await del(DRILLDOWN_KEY, drilldownStore);
-        console.log('[Drilldown] Cleared from IndexedDB');
+        const db = getDb()
+        await db.drilldown.delete(DRILLDOWN_KEY)
+        console.log('[Drilldown] Cleared from IndexedDB')
     } catch (error) {
-        console.error('[Drilldown] Failed to clear:', error);
+        console.error('[Drilldown] Failed to clear:', error)
     }
 }
