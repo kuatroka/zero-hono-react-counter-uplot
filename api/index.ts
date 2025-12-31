@@ -8,6 +8,8 @@ import allAssetsActivityRoutes from "./routes/all-assets-activity";
 import assetsRoutes from "./routes/assets";
 import superinvestorsRoutes from "./routes/superinvestors";
 import investorFlowRoutes from "./routes/investor-flow";
+import cikQuarterlyRoutes from "./routes/cik-quarterly";
+import dataFreshnessRoutes from "./routes/data-freshness";
 
 export const config = {
   runtime: "edge",
@@ -23,6 +25,8 @@ app.route("/all-assets-activity", allAssetsActivityRoutes);
 app.route("/assets", assetsRoutes);
 app.route("/superinvestors", superinvestorsRoutes);
 app.route("/investor-flow", investorFlowRoutes);
+app.route("/cik-quarterly", cikQuarterlyRoutes);
+app.route("/data-freshness", dataFreshnessRoutes);
 
 // See seed.sql
 // In real life you would of course authenticate the user however you like.
