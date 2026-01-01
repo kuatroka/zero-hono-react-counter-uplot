@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useMemo } from "react";
+import { useEffect, useRef, useState, useMemo, useCallback } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import { useLiveQuery } from "@tanstack/react-db";
 import { Input } from "@/components/ui/input";
@@ -119,31 +119,57 @@ export function DuckDBGlobalSearch() {
     return filtered;
   }, [allItems, debouncedQuery, shouldSearch]);
 
-  // On mount, try to load pre-computed index first, then fallback to full-dump sync
-  useEffect(() => {
-    const initSearch = async () => {
-      // 1. Try to load pre-computed index from API (fastest - single JSON file)
-      console.log('[Search] Attempting to load pre-computed index...');
-      await loadPrecomputedIndex();
-      
-      // 2. If pre-computed index loaded, we're done
-      if (isSearchIndexReady()) {
-        console.log('[Search] Pre-computed index loaded successfully');
-        setIsInitialized(true);
-        return;
-      }
-      
-      // 3. Fallback: load via TanStack DB full-dump sync
-      console.log('[Search] Pre-computed index not available, falling back to full-dump sync...');
-      const syncState = getSyncState();
-      if (syncState.status !== 'complete') {
-        await preloadSearches();
-      }
+  // Defer search index loading to avoid blocking page load
+  // Load during browser idle time or when user focuses the search box
+  const indexLoadStartedRef = useRef(false);
+
+  const loadSearchIndex = useCallback(async () => {
+    if (indexLoadStartedRef.current) return;
+    indexLoadStartedRef.current = true;
+
+    // 1. Try to load pre-computed index from IndexedDB/API
+    console.log('[Search] Loading search index...');
+    await loadPrecomputedIndex();
+
+    // 2. If pre-computed index loaded, we're done
+    if (isSearchIndexReady()) {
+      console.log('[Search] Search index loaded successfully');
       setIsInitialized(true);
-    };
-    
-    initSearch();
+      return;
+    }
+
+    // 3. Fallback: load via TanStack DB full-dump sync
+    console.log('[Search] Fallback to full-dump sync...');
+    const syncState = getSyncState();
+    if (syncState.status !== 'complete') {
+      await preloadSearches();
+    }
+    setIsInitialized(true);
   }, []);
+
+  // Load index on idle (deferred) or immediately if user starts typing
+  useEffect(() => {
+    // Use requestIdleCallback to defer loading until browser is idle
+    // This prevents blocking the initial page render
+    if ('requestIdleCallback' in window) {
+      const idleId = requestIdleCallback(() => {
+        loadSearchIndex();
+      }, { timeout: 2000 }); // Load within 2 seconds max
+
+      return () => cancelIdleCallback(idleId);
+    } else {
+      // Fallback for browsers without requestIdleCallback
+      const timeoutId = setTimeout(loadSearchIndex, 100);
+      return () => clearTimeout(timeoutId);
+    }
+  }, [loadSearchIndex]);
+
+  // Also load immediately if user focuses search before idle callback fires
+  const handleFocus = useCallback(() => {
+    if (!indexLoadStartedRef.current) {
+      loadSearchIndex();
+    }
+  }, [loadSearchIndex]);
 
   // Fallback to API if collection is empty and user is searching
   useEffect(() => {
@@ -261,6 +287,7 @@ export function DuckDBGlobalSearch() {
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           onKeyDown={handleKeyDown}
+          onFocus={handleFocus}
           className="w-full sm:w-[30rem] pr-16"
         />
         {queryTimeMs !== undefined && shouldSearch && !isFetching && (

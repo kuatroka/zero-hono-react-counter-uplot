@@ -1,5 +1,6 @@
 import { Hono } from "hono";
 import { getDuckDBConnection } from "../duckdb";
+import { getManifestVersion } from "../duckdb-manifest";
 
 const dataFreshnessRoutes = new Hono();
 
@@ -14,8 +15,12 @@ dataFreshnessRoutes.get("/", async (c) => {
             ? String(rows[0][0])
             : null;
 
+        // Include manifest version for blue-green awareness
+        const dbVersion = getManifestVersion();
+
         return c.json({
             lastDataLoadDate,
+            dbVersion,
             timestamp: Date.now()
         });
     } catch (error) {

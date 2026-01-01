@@ -11,6 +11,7 @@
 import { queryClient } from './query-client';
 import { createAssetsCollection, type Asset } from './assets';
 import { createSuperinvestorsCollection, type Superinvestor } from './superinvestors';
+import { createAllAssetsActivityCollection } from './all-assets-activity';
 import { searchesCollection, preloadSearches, type SearchResult } from './searches';
 import { type InvestorDetail } from './investor-details';
 
@@ -20,6 +21,7 @@ export { queryClient };
 // Create collection instances with the shared queryClient
 export const assetsCollection = createAssetsCollection(queryClient);
 export const superinvestorsCollection = createSuperinvestorsCollection(queryClient);
+export const allAssetsActivityCollection = createAllAssetsActivityCollection(queryClient);
 
 // Re-export searches collection (now uses shared queryClient with IndexedDB persistence)
 export { searchesCollection, preloadSearches };
@@ -36,6 +38,7 @@ export async function preloadCollections(): Promise<void> {
     await Promise.all([
         assetsCollection.preload(),
         superinvestorsCollection.preload(),
+        allAssetsActivityCollection.preload(),
     ]);
     
     console.log(`[Collections] Preloaded in ${Math.round(performance.now() - startTime)}ms`);

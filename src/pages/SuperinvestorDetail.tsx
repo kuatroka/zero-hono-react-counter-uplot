@@ -3,13 +3,18 @@ import { useLiveQuery } from '@tanstack/react-db';
 import { useContentReady } from '@/hooks/useContentReady';
 import { useEffect, useRef, useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { LatencyBadge } from '@/components/LatencyBadge';
-import { superinvestorsCollection } from '@/collections';
+import { LatencyBadge, type DataFlow } from '@/components/LatencyBadge';
+import { superinvestorsCollection, fetchCikQuarterlyData, type CikQuarterlyData } from '@/collections';
+import { CikValueLineChart } from '@/components/charts/CikValueLineChart';
 
 export function SuperinvestorDetailPage() {
   const { cik } = useParams({ strict: false }) as { cik?: string };
   const { onReady } = useContentReady();
   const [queryTimeMs, setQueryTimeMs] = useState<number | null>(null);
+  const [chartData, setChartData] = useState<CikQuarterlyData[]>([]);
+  const [chartQueryTimeMs, setChartQueryTimeMs] = useState<number | null>(null);
+  const [chartDataSource, setChartDataSource] = useState<DataFlow>('unknown');
+  const [chartLoading, setChartLoading] = useState(false);
 
   // Query superinvestors from TanStack DB local collection (instant from IndexedDB cache)
   // Data is preloaded on app init and persisted to IndexedDB
@@ -26,6 +31,33 @@ export function SuperinvestorDetailPage() {
       setQueryTimeMs(0);
     }
   }, [isLoading, superinvestorsData, queryTimeMs]);
+
+  // Fetch quarterly chart data when CIK is available
+  useEffect(() => {
+    if (!cik) return;
+
+    setChartLoading(true);
+
+    fetchCikQuarterlyData(cik)
+      .then(({ rows, queryTimeMs: elapsed, source }) => {
+        setChartData(rows);
+        setChartQueryTimeMs(elapsed);
+        // Map source to DataFlow type for latency badge
+        const dataFlow: DataFlow = source === 'api' ? 'tsdb-api'
+          : source === 'indexeddb' ? 'tsdb-indexeddb'
+          : 'tsdb-memory';
+        setChartDataSource(dataFlow);
+      })
+      .catch((err) => {
+        console.error('[SuperinvestorDetail] Failed to fetch quarterly data:', err);
+        setChartData([]);
+        setChartQueryTimeMs(null);
+        setChartDataSource('unknown');
+      })
+      .finally(() => {
+        setChartLoading(false);
+      });
+  }, [cik]);
 
   // Signal ready when data is available (from cache or server)
   const readyCalledRef = useRef(false);
@@ -50,7 +82,7 @@ export function SuperinvestorDetailPage() {
   }
 
   return (
-    <div className="container mx-auto px-4 py-8 max-w-4xl">
+    <div className="container mx-auto px-4 py-8 max-w-4xl space-y-6">
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center justify-between gap-2">
@@ -67,6 +99,26 @@ export function SuperinvestorDetailPage() {
           </div>
         </CardContent>
       </Card>
+
+      {/* Portfolio Value Chart */}
+      {chartLoading ? (
+        <Card>
+          <CardContent className="py-8 text-center text-muted-foreground">
+            Loading portfolio history...
+          </CardContent>
+        </Card>
+      ) : (
+        <CikValueLineChart
+          data={chartData}
+          cikName={record.cikName}
+          latencyBadge={
+            <LatencyBadge
+              latencyMs={chartQueryTimeMs ?? undefined}
+              source={chartDataSource}
+            />
+          }
+        />
+      )}
     </div>
   );
 }

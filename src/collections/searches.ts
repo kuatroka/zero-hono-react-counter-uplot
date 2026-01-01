@@ -255,13 +255,14 @@ export function buildSearchIndex(items: SearchResult[]): void {
 }
 
 // Fast search using pre-computed index - O(1) lookup instead of O(n) filter
+// Falls back to O(n) substring scan for matches not found by prefix indexing
 export function searchWithIndex(query: string, limit: number = 20): ScoredSearchResult[] {
     if (!searchIndex || query.length < 2) return []
-    
+
     const lowerQuery = query.toLowerCase()
     const results: Array<{ item: SearchResult; score: number }> = []
     const seenIds = new Set<number>()
-    
+
     // 1. Exact code match (score: 100)
     const exactMatches = searchIndex.codeExact[lowerQuery]
     if (exactMatches) {
@@ -272,7 +273,7 @@ export function searchWithIndex(query: string, limit: number = 20): ScoredSearch
             if (item) results.push({ item, score: 100 })
         }
     }
-    
+
     // 2. Code prefix match (score: 80)
     const codePrefixMatches = searchIndex.codePrefixes[lowerQuery]
     if (codePrefixMatches) {
@@ -283,7 +284,7 @@ export function searchWithIndex(query: string, limit: number = 20): ScoredSearch
             if (item) results.push({ item, score: 80 })
         }
     }
-    
+
     // 3. Name prefix match (score: 40)
     const namePrefixMatches = searchIndex.namePrefixes[lowerQuery]
     if (namePrefixMatches) {
@@ -294,10 +295,41 @@ export function searchWithIndex(query: string, limit: number = 20): ScoredSearch
             if (item) results.push({ item, score: 40 })
         }
     }
-    
+
+    // 4. Substring matches - O(n) scan for "contains" matches not found by prefix
+    // This handles cases like searching "disney" to find "Walt Disney"
+    // Only scan if we haven't found enough results from prefix matching
+    if (results.length < limit) {
+        for (const id of Object.keys(searchIndex.items)) {
+            const numId = Number(id)
+            if (seenIds.has(numId)) continue
+
+            const item = searchIndex.items[id]
+            if (!item) continue
+
+            const lowerCode = item.code.toLowerCase()
+            const lowerName = (item.name || '').toLowerCase()
+
+            // Check for code substring (not prefix, since prefix already checked)
+            if (lowerCode.includes(lowerQuery) && !lowerCode.startsWith(lowerQuery)) {
+                seenIds.add(numId)
+                results.push({ item, score: 60 })
+                if (results.length >= limit * 2) break // Limit scan scope
+                continue
+            }
+
+            // Check for name substring (not prefix, since prefix already checked)
+            if (lowerName.includes(lowerQuery) && !lowerName.startsWith(lowerQuery)) {
+                seenIds.add(numId)
+                results.push({ item, score: 20 })
+                if (results.length >= limit * 2) break // Limit scan scope
+            }
+        }
+    }
+
     // Sort by score and limit
     results.sort((a, b) => b.score - a.score || (a.item.name || '').localeCompare(b.item.name || ''))
-    
+
     return results.slice(0, limit).map(r => ({ ...r.item, score: r.score } as ScoredSearchResult))
 }
 

@@ -1,19 +1,20 @@
 import { DuckDBInstance } from "@duckdb/node-api";
 import { stat } from "node:fs/promises";
-
-const DUCKDB_PATH = process.env.DUCKDB_PATH || "/Users/yo_macbook/Documents/app_data/TR_05_DB/TR_05_DUCKDB_FILE.duckdb";
+import { getActiveDuckDbPath, getManifestVersion } from "./duckdb-manifest";
 
 let instance: DuckDBInstance | null = null;
 let connection: Awaited<ReturnType<DuckDBInstance["connect"]>> | null = null;
 let connectionInit: Promise<Awaited<ReturnType<DuckDBInstance["connect"]>>> | null = null;
 let lastFileMtime: number | null = null;
+let lastManifestVersion: number | null = null;
+let currentDbPath: string | null = null;
 
 /**
  * Get the file's modification time in milliseconds
  */
-async function getFileMtime(): Promise<number | null> {
+async function getFileMtime(dbPath: string): Promise<number | null> {
   try {
-    const stats = await stat(DUCKDB_PATH);
+    const stats = await stat(dbPath);
     return stats.mtimeMs;
   } catch {
     return null;
@@ -21,11 +22,19 @@ async function getFileMtime(): Promise<number | null> {
 }
 
 /**
- * Check if the DuckDB file has been modified since we opened the connection
+ * Check if the DuckDB file has changed (manifest version or file mtime)
  */
 async function hasFileChanged(): Promise<boolean> {
-  if (lastFileMtime === null) return false;
-  const currentMtime = await getFileMtime();
+  // Check manifest version first (blue-green pattern)
+  const currentVersion = getManifestVersion();
+  if (currentVersion !== null && lastManifestVersion !== null && currentVersion !== lastManifestVersion) {
+    console.log(`[DuckDB] Manifest version changed: ${lastManifestVersion} -> ${currentVersion}`);
+    return true;
+  }
+
+  // Fallback: check file mtime
+  if (lastFileMtime === null || currentDbPath === null) return false;
+  const currentMtime = await getFileMtime(currentDbPath);
   return currentMtime !== null && currentMtime !== lastFileMtime;
 }
 
@@ -34,17 +43,21 @@ async function hasFileChanged(): Promise<boolean> {
  * Uses DuckDBInstance.create() instead of fromCache() to ensure fresh data after file changes.
  */
 async function openConnection(): Promise<Awaited<ReturnType<DuckDBInstance["connect"]>>> {
-  // Track file mtime before opening
-  lastFileMtime = await getFileMtime();
+  // Get the active database path from manifest (or fallback to env var)
+  currentDbPath = getActiveDuckDbPath();
+
+  // Track manifest version and file mtime
+  lastManifestVersion = getManifestVersion();
+  lastFileMtime = await getFileMtime(currentDbPath);
 
   // Use create() instead of fromCache() to avoid stale cached instances
   // This ensures we always read fresh data when the file has changed
-  instance = await DuckDBInstance.create(DUCKDB_PATH, {
+  instance = await DuckDBInstance.create(currentDbPath, {
     threads: "4",
     access_mode: "READ_ONLY",
   });
   const conn = await instance.connect();
-  console.log(`[DuckDB] Connected to ${DUCKDB_PATH} (mtime: ${lastFileMtime})`);
+  console.log(`[DuckDB] Connected to ${currentDbPath} (version: ${lastManifestVersion}, mtime: ${lastFileMtime})`);
 
   try {
     const reader = await conn.runAndRead(
@@ -109,6 +122,8 @@ export async function closeDuckDBConnection() {
     instance = null;
     connectionInit = null;
     lastFileMtime = null;
+    lastManifestVersion = null;
+    currentDbPath = null;
     console.log("[DuckDB] Connection closed");
   }
 }

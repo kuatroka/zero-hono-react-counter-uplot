@@ -111,3 +111,76 @@ The system SHALL handle IndexedDB errors gracefully with meaningful error messag
 #### Scenario: Restoration failure
 - **WHEN** reading from IndexedDB fails
 - **THEN** the system falls back to fetching from the API
+
+### Requirement: End-to-End Integration Testing
+
+The system SHALL be thoroughly tested using browser automation and server log verification to confirm all cache invalidation scenarios work correctly.
+
+#### Scenario: Fresh load - API fetch and IndexedDB persistence
+- **GIVEN** IndexedDB is empty (cleared via DevTools)
+- **WHEN** the user navigates to `/superinvestors/1092254`
+- **THEN** server logs show API requests for `/api/superinvestors` and `/api/cik-quarterly/1092254`
+- **AND** browser DevTools > Application > IndexedDB shows `app-cache` database with populated tables
+- **AND** the page renders with chart data
+
+#### Scenario: Cached load - IndexedDB restoration without API calls
+- **GIVEN** the page was previously loaded and IndexedDB contains cached data
+- **WHEN** the user refreshes the page
+- **THEN** server logs show NO requests to `/api/superinvestors` (only `/api/data-freshness`)
+- **AND** console logs show `[DataFreshness] Cache is fresh`
+- **AND** the page renders instantly from cache
+
+#### Scenario: Cache invalidation - DuckDB update triggers fresh fetch
+- **GIVEN** the page is loaded with cached data
+- **WHEN** the DuckDB `high_level_totals.last_data_load_date` is updated to a new value
+- **AND** the user refreshes the page
+- **THEN** console logs show `[DataFreshness] Data updated: OLD → NEW, invalidating caches...`
+- **AND** console logs show `[Dexie] Database deleted and reopened`
+- **AND** server logs show fresh API requests for `/api/superinvestors` and `/api/cik-quarterly/1092254`
+- **AND** NO `window.location.reload()` occurs (page does not flash/reload)
+- **AND** the page renders with fresh data
+
+#### Scenario: Tab focus invalidation - background DuckDB update detected
+- **GIVEN** the page is loaded with cached data
+- **WHEN** the user switches to another tab for more than 5 seconds
+- **AND** the DuckDB `last_data_load_date` is updated while the tab is in background
+- **AND** the user switches back to the app tab
+- **THEN** console logs show `[DataFreshness] Tab focus: data updated, invalidating caches...`
+- **AND** server logs show fresh API requests
+- **AND** the page updates with fresh data without reload
+
+#### Scenario: IndexedDB structure verification
+- **GIVEN** the app has been used and data is cached
+- **WHEN** inspecting DevTools > Application > IndexedDB
+- **THEN** only ONE database named `app-cache` exists (no legacy `tanstack-query-cache`, `search-index-cache`, etc.)
+- **AND** the database contains tables: `queryCache`, `searchIndex`, `cikQuarterly`
+- **AND** each table contains appropriate data with timestamps
+
+#### Scenario: Console log verification for full flow
+- **GIVEN** a fresh browser session with cleared IndexedDB
+- **WHEN** the user loads the app, navigates to a superinvestor page, refreshes, then triggers invalidation
+- **THEN** console logs show the complete flow:
+  1. `[Dexie] Database opened: app-cache`
+  2. `[DataFreshness] First load, storing version: YYYY-MM-DD HH:MM:SS`
+  3. `[Collections] Preloading...`
+  4. `[Superinvestors] Fetched N superinvestors in Xms`
+  5. `[CikQuarterly] Fetched N quarters for CIK X in Xms (source: api)`
+  6. On refresh: `[DataFreshness] Cache is fresh`
+  7. On invalidation: `[DataFreshness] Data updated...invalidating caches...`
+  8. `[Dexie] Database closed`
+  9. `[Dexie] Database deleted`
+  10. `[Dexie] Database reopened: app-cache`
+  11. `[Collections] Preloading...` (fresh fetch)
+
+#### Scenario: Network tab verification for cache effectiveness
+- **GIVEN** data is cached in IndexedDB
+- **WHEN** the user navigates between pages and returns to a previously visited page
+- **THEN** DevTools > Network tab shows NO duplicate API requests for cached data
+- **AND** only `/api/data-freshness` is called on each navigation (lightweight check)
+
+#### Scenario: Multiple superinvestor pages - per-CIK caching
+- **GIVEN** the user visits `/superinvestors/1092254` (data cached)
+- **WHEN** the user navigates to `/superinvestors/22356` (different CIK)
+- **THEN** server logs show API request for `/api/cik-quarterly/22356` (new CIK)
+- **AND** when returning to `/superinvestors/1092254`, NO API request is made (cached)
+- **AND** DevTools > IndexedDB > `cikQuarterly` table shows entries for both CIKs
